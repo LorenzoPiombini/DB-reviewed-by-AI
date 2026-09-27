@@ -154,8 +154,13 @@ static void decode_tests(void)
         assert(lua_gettop(L)==0);
     }
     char *out=NULL;
-    b[n]=0;
-    assert(execute_lua_function("inspect","t>s",b,n+1,"test",&out)==-1);
+    /* A complete table may occupy only a prefix of the readable buffer. */
+    for(int padding=0;padding<2;++padding){
+        memset(b+n,padding ? 0xa5 : 0,sizeof(b)-n);
+        assert(execute_lua_function("inspect","t>s",b,sizeof(b),"test",&out)==0);
+        assert(strcmp(out,"abc")==0);
+        clear_lua_stack();
+    }
     b[5]=0;
     assert(execute_lua_function("inspect","t>s",b,n,"test",&out)==-1);
     /* Array entries must carry OBJECT_JS, not an arbitrary tag. */
@@ -170,7 +175,7 @@ static void decode_tests(void)
     }
     word(b+n,0); n+=2;
     assert(execute_lua_function("inspect","t>s",b,n,"test",&out)==-1);
-    assert(lua_gettop(L)==0 && calls==1);
+    assert(lua_gettop(L)==0 && calls==3);
     char sig[20];
     assert(get_function_signature("good_report",sig,sizeof(sig))==0);
     assert(strcmp(sig,">s")==0);

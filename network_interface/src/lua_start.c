@@ -134,7 +134,8 @@ int execute_lua_function(char *func_name, char *func_sig,...)
 
 				if(!data || !file_name) goto failed;
 				size_t bwalked = 0; 
-				if(create_lua_table(data,file_name,data_size,&bwalked) == -1 || bwalked != data_size) {
+				/* data_size bounds readable bytes; one table need not consume them all. */
+				if(create_lua_table(data,file_name,data_size,&bwalked) == -1) {
 					goto failed;
 				}
 				break;

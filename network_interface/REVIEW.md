@@ -14,7 +14,7 @@ The older `load_db.c` text protocol is outside this patch.
 - Bound report signature copies and accept only `>s`, matching the C arguments
   actually supplied. Other signatures could previously overrun the buffer or
   make the variadic Lua bridge access nonexistent arguments.
-- Bound recursive table decoding, reserve Lua stack space, reject trailing data,
+- Bound recursive table decoding, reserve Lua stack space, reject
   invalid array tags, embedded NUL field names, and incomplete/nonfinite numeric
   values. Restore the Lua stack after failed calls and between requests.
 - Handle interrupted accept/receive/send calls, close failed key-list sockets,
@@ -130,3 +130,11 @@ This extension calls the existing disk writer unchanged: it does not add fsync,
 transactional file replacement, missing schema persistence, or rollback.
 Those storage limitations listed above remain. A successful shutdown flush is
 not a power-loss durability guarantee.
+
+## Parser buffer-bound correction
+
+The table decoder's `data_size` is a readable-buffer bound, not a requirement
+that one table consume every byte. The extra `bwalked != data_size` rejection
+introduced in 3216cc5 has been removed. Per-read bounds checks still reject
+truncated tables. Regression tests accept a complete table followed by zero or
+nonzero unused bytes and check that the decoded value is unchanged.
