@@ -188,18 +188,35 @@ function update_orders(orders_head, orders_lines, key)
 end
 
 function write_orders(data)
+	if type(data) ~= "table" or type(data.fields) ~= "table" then return nil,VALUE_ERROR end
 	local soh = data.fields.sales_orders_head
 	local sol = data.fields.sales_orders_lines
 
+	-- Validate the entire order before allocating a key or writing any line.
+	if type(soh) ~= "table" or type(sol) ~= "table" then return nil,VALUE_ERROR end
+	local count = soh.lines_nr
+	if type(count) ~= "number" or count < 1 or count == math.huge or count ~= math.floor(count) then
+		return nil,VALUE_ERROR
+	end
+	if count ~= #sol then return nil,VALUE_ERROR end
+	for i = 1, count do
+		local line = sol[i]
+		if type(line) ~= "table" or type(line.fields) ~= "table" then return nil,VALUE_ERROR end
+		local qty = line.fields.qty
+		if type(qty) ~= "number" or qty ~= qty or qty <= 0 or qty == math.huge then
+			return nil,VALUE_ERROR
+		end
+	end
+
 	local next_head_key = get_numeric_key(sales_orders.head,BASE,ORDER_BASE)
-	for i = 1, soh.lines_nr do
-		if sol[i].fields.qty == nil or sol[i].fields.qty <= 0 then return nil,VALUE_ERROR end
+	if next_head_key == nil then return nil,-23 end
+	for i = 1, count do
 		--create the Record_f like structure
 		sol[i].file_name = sales_orders.lines		
 		sol[i].offset = g_offset(sales_orders.lines)
 		local key_line = string.format("%d/%d", next_head_key, i)
 		local kl, ord_lines = w_rec(sales_orders.lines, sol[i], key_line)
-		if ord_lines == nil then return nil, SALES_ORDER_LINE_WRITE_FAILED end
+		if ord_lines == nil then return nil, SALES_ORDER_LINES_WRITE_FAILED end
 	end
 
 	--create the Record_f like structure
@@ -210,7 +227,7 @@ function write_orders(data)
 
 	local kh, ord_head = w_rec(sales_orders.head, soh_t,next_head_key)
 	if ord_head == nil then return nil, SALES_ORDER_HEAD_WRITE_FAILED end
-	return next_head_key
+	return next_head_key,0
 end
 
 function wait(orders_head, orders_lines)

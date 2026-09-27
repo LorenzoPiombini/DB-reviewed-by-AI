@@ -51,13 +51,10 @@ WSER; this is not a TCP framing implementation.
    `used - now_seconds()` for its idle timeout, normally negative. It also runs
    only around requests/accept, and missing configuration bypasses maintenance.
    Correcting this must be paired with the storage flush review above.
-4. **Order writes can partially succeed.** `write_orders` validates and writes
-   each line in the same loop, then writes the header. A later invalid line or
-   write failure leaves earlier writes behind; there is no rollback. It also
-   references `SALES_ORDER_LINE_WRITE_FAILED`, whereas the declared constant is
-   plural. Its `nil, error_code` return is truncated by the current `t>l` bridge
-   call, losing the specific error. Whole-order validation and transactional
-   writes need a separate tested change.
+4. **Storage failures can still leave partial orders.** Whole-order quantity
+   validation now precedes writes, and line/head error codes reach the worker.
+   However, a disk/cache write failure after earlier lines were written still
+   has no rollback. Transactional writes remain a separate requirement.
 
 These findings are based on source inspection. This patch does not establish
 storage durability or validate the database engine as a whole.
@@ -138,3 +135,29 @@ that one table consume every byte. The extra `bwalked != data_size` rejection
 introduced in 3216cc5 has been removed. Per-read bounds checks still reject
 truncated tables. Regression tests accept a complete table followed by zero or
 nonzero unused bytes and check that the decoded value is unchanged.
+
+## Cache eviction and order-write follow-up
+
+- Full-cache eviction now removes the old filename from `cache_register` and
+  frees that register node before freeing/reusing the slot. Previously a lookup
+  for the evicted file could return the reused slot and access another file's
+  cached contents. Failure to flush or remove the register entry retains the
+  slot and reports failure.
+- `write_orders` validates the head/line table shape, positive integer line
+  count, matching array length, and every finite positive quantity before key
+  generation or any line write. Previously an invalid later line left earlier
+  lines written. A failed key allocation is now reported before writes.
+- The active order writer now uses the declared plural line-error constant.
+  Successful calls return `key, 0`; errors retain `nil, error_code`. The C bridge
+  requests both results so it can preserve the error code instead of discarding
+  it. Deploy the updated worker library and Lua configuration together.
+
+Regression tests run the real Lua configuration with substituted storage calls
+and test the actual eviction function with substituted cache/register operations.
+They verify no writes for malformed orders (including an invalid second line),
+line/head/key failure codes, successful ordering, removing stale registrations,
+and preserving cache contents on eviction failures. ASan/UBSan pass with leak
+checking disabled in this environment as documented above. The eviction test
+uses GCC's `--param asan-globals=0` to let the linker discard unused Lua entry
+points; other compiler choices need an equivalent setting. These are not
+on-disk crash-recovery tests. Both Makefiles are unchanged.

@@ -356,9 +356,9 @@ n_item_error:
 
 			if(operation_to_perform == UPDATE_SORD) goto new_up_ords_err; /* not implemented */
 
-			long long key_ord = -1;
+			long long key_ord = -1, order_status = -1;
 			if(operation_to_perform == NEW_SORD){
-				if(execute_lua_function("write_orders","t>l",data,data_size-10,"data",&key_ord) == -1){
+				if(execute_lua_function("write_orders","t>ll",data,data_size-10,"data",&key_ord,&order_status) == -1 || order_status != 0){
 					/*send error and resume*/
 					/*key ord contain the error code*/
 					short int err_code = (short int)key_ord;

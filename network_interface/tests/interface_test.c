@@ -71,7 +71,7 @@ int __wrap_init_lua(char *path)
         "function inspect(t) counted(); return t.fields.x end\n"
         "function write_customers(t) counted(); if t.fields.x then return -20, -1 end; return 0, 4294967297 end\n"
         "function write_item(t) counted(); if t.fields.x then return -24, 'failed' end; return 0, 'a\"b' end\n"
-        "function write_orders(t) counted(); return 4294967297 end\n"
+        "function write_orders(t) counted(); if t.fields.x then return nil,-20 end; return 4294967297,0 end\n"
         "function g_all_key(file, ...) counted(); if file:match('/item$') then return nil end; return '[1,2]' end\n"
         "function get_customer(k) counted(); return tostring(k) end\n"
         "function good_report() counted(); return string.rep('x',70000) end\n"
@@ -235,6 +235,7 @@ static void worker_tests(void)
     int customer=write_request(NEW_CUST), item=write_request(N_ITEM), order=write_request(NEW_SORD);
     int update=write_request(UPDATE_SORD);
     int bad_customer=rejected_write(NEW_CUST), bad_item=rejected_write(N_ITEM);
+    int bad_order=rejected_write(NEW_SORD);
     int badreport=request(RPT,"bad_report"), hugesig=request(RPT,"huge_report");
     int report=request(RPT,"good_report");
     assert(send(client_fds[report],"\1",1,0)==1);
@@ -248,13 +249,14 @@ static void worker_tests(void)
     int overflow=request(CUSTOMER_GET,"4294967296");
     int key=request(CUSTOMER_GET,"4294967295");
     assert(run_worker()==-1);
-    assert(L==NULL && calls==110); /* 6 writes, 2 reports, 101 lists, 1 key */
+    assert(L==NULL && calls==111); /* 7 writes, 2 reports, 101 lists, 1 key */
     error_reply(short_packet); error_reply(short_length); error_reply(update);
     char b[72000];
     assert(receive(oversize,b,sizeof(b))==0);
     int16_t code;
     assert(receive(bad_customer,b,sizeof(b))>2); memcpy(&code,b,2); assert(code==-20);
     assert(receive(bad_item,b,sizeof(b))>2); memcpy(&code,b,2); assert(code==-24);
+    assert(receive(bad_order,b,sizeof(b))>2); memcpy(&code,b,2); assert(code==-20);
     assert(receive(customer,b,sizeof(b))>2 && strstr(b+2,"4294967297"));
     assert(receive(order,b,sizeof(b))>2 && strstr(b+2,"4294967297"));
     assert(receive(item,b,sizeof(b))>2 && strcmp(b+2,"{\"message\":\"'a\\\"b' added!\"}")==0);
@@ -342,5 +344,10 @@ int main(void)
 {
     setbuf(stdout,NULL);
     decode_tests(); worker_tests(); shutdown_tests(); parent_death_test();
+    L=luaL_newstate(); assert(L); luaL_openlibs(L);
+    assert(luaL_dostring(L,"package.preload.db=function() return {} end")==LUA_OK);
+    assert(luaL_dofile(L,"network_interface/lua/db_config.lua")==LUA_OK);
+    assert(luaL_dofile(L,"network_interface/tests/order_test.lua")==LUA_OK);
+    close_lua();
     return 0;
 }

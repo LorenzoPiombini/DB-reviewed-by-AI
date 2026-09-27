@@ -2051,6 +2051,13 @@ static int check_and_free_one_cache(struct Cache *c)
 				fprintf(stderr,"cannot write cache to disk!!!%s:%d\n",__FILE__,__LINE__);
 				return -1;
 			}
+            /* Remove the old file mapping before this slot can be reused. */
+            Node *entry = ht_delete(c[i].file_name,&cache_register,STR);
+            if(!entry){
+                fprintf(stderr,"cannot remove cache register entry for %s\n",c[i].file_name);
+                return -1;
+            }
+            free_ht_node(entry);
 			free_cache(&c[i]);
 			return i;
 		}

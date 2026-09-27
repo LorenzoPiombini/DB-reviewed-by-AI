@@ -20,3 +20,11 @@ ${CC:-cc} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -std=gnu11 -g -O1 -Wall -Wextra 
     -Wl,--wrap=poll,--wrap=accept,--wrap=init_lua,--wrap=check_config_file \
     $LUA_LIBS -o "$build_dir/interface_test"
 "$build_dir/interface_test"
+
+# GCC: avoid retaining the unused Lua registration table through ASan globals.
+${CC:-gcc} --param asan-globals=0 -std=gnu11 -g -O1 -ffunction-sections -fdata-sections \
+    ${SANITIZERS:--fsanitize=address,undefined} -fno-omit-frame-pointer \
+    $LUA_CFLAGS -Iinclude -Ilua/include \
+    network_interface/tests/cache_eviction_test.c -Wl,--gc-sections \
+    $LUA_LIBS -o "$build_dir/cache_eviction_test"
+"$build_dir/cache_eviction_test"
