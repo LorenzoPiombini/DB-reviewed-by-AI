@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <errno.h>
+#include <math.h>
 
 #include "record.h"
 #include "file.h"
@@ -24,38 +25,47 @@ HashTable *cache_r_ptr =NULL;
 static int load(lua_State *L, char *file_config);
 static void free_inactive_caches(struct Cache *c);
 static int create_lua_table(ui8 *data, char *file_name,size_t data_size,size_t *bwalked);
-static int create_nested_lua_table(ui8 *data,size_t data_size,size_t *bwalked);
+static int create_nested_lua_table(ui8 *data,size_t data_size,size_t *bwalked, unsigned depth);
 
 int init_lua(char *config_file)
 {
 	L = luaL_newstate();
+    if(!L) return -1;
 	luaL_openlibs(L);
 
-	if(load(L,config_file) == -1) return -1;
+	if(load(L,config_file) == -1) goto failed;
 		
 	lua_getglobal(L,"dbCache_ptr");
-	if(!lua_islightuserdata(L,-1)) return -1;
+	if(!lua_islightuserdata(L,-1)) goto failed;
 	dbcache_ptr = (struct Cache *) lua_touserdata(L,-1);
 	lua_pop(L,1);
 
 	lua_getglobal(L,"cache_register_ptr");
-	if(!lua_islightuserdata(L,-1)) return -1;
+	if(!lua_islightuserdata(L,-1)) goto failed;
 	cache_r_ptr = (HashTable *) lua_touserdata(L,-1);
 	lua_pop(L,1);
 
 	lua_getglobal(L,"port_table_function");
-	if(!lua_islightuserdata(L,-1)) return -1;
+	if(!lua_islightuserdata(L,-1)) goto failed;
 	tbl_to_rec = (table_to_record_fn)lua_touserdata(L,-1);
 	lua_pop(L,1);
 
 	check_config_file();
 	top_lua_stack = lua_gettop(L);
 	return 0;
+failed:
+	close_lua();
+	return -1;
 }
 
 void close_lua()
 {
-	lua_close(L);
+	if(L) lua_close(L);
+    L=NULL;
+    dbcache_ptr=NULL;
+    cache_r_ptr=NULL;
+    tbl_to_rec=NULL;
+    top_lua_stack=0;
 }
 
 void check_config_file()
@@ -82,11 +92,13 @@ void check_config_file()
 }
 void clear_lua_stack()
 {
-	lua_settop(L,top_lua_stack);
+	if(L) lua_settop(L,top_lua_stack);
 }
 
 int execute_lua_function(char *func_name, char *func_sig,...)
 {
+	if(!L || !func_name || !func_sig || !lua_checkstack(L,8)) return -1;
+    int saved_top=lua_gettop(L);
 	va_list vl;
 	int narg, nres;
 
@@ -95,7 +107,7 @@ int execute_lua_function(char *func_name, char *func_sig,...)
 
 	for(narg = 0; *func_sig != '\0'; narg++,func_sig++){
 
-		luaL_checkstack(L,1,"too many arguments");
+		if(!lua_checkstack(L,8)) goto failed;
 
 		switch(*func_sig){
 			case 't':
@@ -104,29 +116,21 @@ int execute_lua_function(char *func_name, char *func_sig,...)
 				size_t data_size = va_arg(vl,size_t);
 				char *file_name = va_arg(vl,char*);
 
-				if(!data || !file_name) return -1;
+				if(!data || !file_name) goto failed;
 				size_t bwalked = 0; 
-				if(create_lua_table(data,file_name,data_size,&bwalked) == -1) {
-					va_end(vl);
-					return -1;
+				if(create_lua_table(data,file_name,data_size,&bwalked) == -1 || bwalked != data_size) {
+					goto failed;
 				}
 				break;
 			}
-			case 'r':
-			/*TODO:
-			  Record_f
-			  if(port_record(L,va_arg(vl,struct Record_f*)) == -1){
-			  return -1;
-			  }
-			  */
-			break;
+			case 'r': goto failed; /* record arguments are not implemented */
 			case 'd':	lua_pushnumber(L,va_arg(vl,double));			break;	/* double */	
 			case 'i': 	lua_pushinteger(L,va_arg(vl,int));				break;	/* integer*/
 			case 'I': 	lua_pushinteger(L,va_arg(vl,uint32_t));			break;	/*unsigned integer*/	
 			case 'l': 	lua_pushinteger(L,va_arg(vl,long));				break;	/* long integer*/	
 			case 's': 	{char *s = va_arg(vl,char*);lua_pushstring(L,s);break;}	/* string*/	
 			case '>': 	func_sig++; goto fcall;/*end of input*/
-			default: 	va_end(vl); return -1;
+			default: 	goto failed;
 		}
 	}
 
@@ -137,8 +141,7 @@ fcall:
 	if(lua_pcall(L,narg,nres,0) != 0){
 		fprintf(stderr,"%s\n",lua_tostring(L,-1));
 		lua_pop(L,1);
-		va_end(vl);
-		return -1;
+		goto failed;
 	}
 
 	if(nres > 0){
@@ -152,7 +155,6 @@ fcall:
 						/*
 							TODO:
 							if(port_table_to_record(L,*va_arg(vl,struct Record_f**)) == -1){
-							clear_lua_stack();
 							return -1;
 							}
 							*/
@@ -163,9 +165,7 @@ fcall:
 						int is_num;
 						double d = lua_tonumberx(L,nres,&is_num);
 						if(!is_num){
-							clear_lua_stack();
-							va_end(vl);
-							return -1;
+							goto failed;
 						}
 						*va_arg(vl, double *) = d;
 						break;
@@ -178,9 +178,7 @@ fcall:
 							/*get error code*/
 							l = lua_tointegerx(L,-1,&is_num);
 							*va_arg(vl, int*) = l;
-							clear_lua_stack();
-							va_end(vl);
-							return -1;
+							goto failed;
 						}
 						*va_arg(vl, int*) = l;
 						break;
@@ -193,9 +191,7 @@ fcall:
 							/*get error code*/
 							l = lua_tointegerx(L,-1,&is_num);
 							*va_arg(vl, long long*) = l;
-							clear_lua_stack();
-							va_end(vl);
-							return -1;
+							goto failed;
 						}
 						*va_arg(vl, long long*) = l;
 						break;
@@ -204,17 +200,13 @@ fcall:
 					{
 						char *s = (char*)lua_tostring(L,nres);
 						if(!s){
-							clear_lua_stack();
-							va_end(vl);
-							return -1;
+							goto failed;
 						}
 						*va_arg(vl,char **) = s;
 						break;
 					}
 				default:
-					clear_lua_stack();
-					va_end(vl);
-					return -1;
+					goto failed;
 			}
 			nres++;
 			func_sig++;
@@ -222,30 +214,34 @@ fcall:
 	}
 	va_end(vl);
 	return 0;
+failed:
+    lua_settop(L,saved_top);
+    va_end(vl);
+    return -1;
 }
 
-int get_function_signature(char *function_name,char *signature)
+int get_function_signature(char *function_name,char *signature,size_t capacity)
 {
-	int size = strlen(function_name);
-	char *var = malloc(size+3);
-	memset(var,0,size+3);
-	strncpy(var,function_name,size);
-	var[size] = '_';
-	var[size+1] = 's';
-
-	lua_getglobal(L,var);
-	free(var);
-
-	char *s  = (char*)lua_tostring(L,-1);
-	if(s){
-		strncpy(signature,s,strlen(s));
-	}else{
-		lua_pop(L,1);
-		return -1;
-	}
-
-	lua_pop(L,1);
-	return 0;
+    if(!L || !function_name || !signature || capacity==0) return -1;
+    signature[0]=0;
+    size_t size=strlen(function_name);
+    if(size > 8192) return -1;
+    char *var=malloc(size+3);
+    if(!var) return -1;
+    memcpy(var,function_name,size);
+    memcpy(var+size,"_s",3);
+    lua_getglobal(L,var);
+    free(var);
+    size_t length=0;
+    const char *value=lua_tolstring(L,-1,&length);
+    int result=-1;
+    if(value && length < capacity && !memchr(value,0,length)){
+        memcpy(signature,value,length);
+        signature[length]=0;
+        result=0;
+    }
+    lua_pop(L,1);
+    return result;
 }
 
 static int load(lua_State *L, char *file_config)
@@ -303,7 +299,7 @@ static int create_lua_table(ui8 *data, char *file_name,size_t data_size,size_t *
 	lua_newtable(L);
 
 	int fields_num = 0;
-	if((fields_num = create_nested_lua_table(data,data_size,bwalked)) == -1) return -1;
+	if((fields_num = create_nested_lua_table(data,data_size,bwalked,1)) == -1) return -1;
 
 	lua_pushinteger(L,fields_num);
 	lua_setfield(L,-2,"fields_number");
@@ -311,8 +307,9 @@ static int create_lua_table(ui8 *data, char *file_name,size_t data_size,size_t *
 	return 0;
 }
 
-static int create_nested_lua_table(ui8 *data,size_t data_size,size_t *bwalked)
+static int create_nested_lua_table(ui8 *data,size_t data_size,size_t *bwalked, unsigned depth)
 {
+    if(depth > JSON_MAX_DEPTH || !lua_checkstack(L, 8)) return -1;
 	if((*bwalked + sizeof(ui16)) > data_size) return -1;
 
 	ui16 fields_num = 0;
@@ -338,6 +335,7 @@ static int create_nested_lua_table(ui8 *data,size_t data_size,size_t *bwalked)
 		char buf[f_len+1];
 		memset(buf,0,f_len+1);
 		memcpy(buf,&data[*bwalked],f_len);
+        if(memchr(buf,0,f_len)) return -1;
 
 		*bwalked += f_len;       
 
@@ -373,12 +371,13 @@ cases:
 				memcpy(&type,&data[*bwalked],sizeof(ui8));
 
 				(*bwalked)++;
+                if(type != OBJECT_JS) return -1;
 
 				lua_newtable(L);
 				lua_newtable(L);
 
 				int fn = 0;
-				if((fn=create_nested_lua_table(data,data_size,bwalked)) == -1) return -1;
+				if((fn=create_nested_lua_table(data,data_size,bwalked,depth+1)) == -1) return -1;
 				lua_setfield(L,-2,"fields");
 				lua_rawseti(L,-2,count++);
 			}	
@@ -389,7 +388,7 @@ cases:
 		{
 			lua_pushlstring(L,buf,f_len);
 			lua_newtable(L);
-			if(create_nested_lua_table(data,data_size,bwalked) == -1) return -1;
+			if(create_nested_lua_table(data,data_size,bwalked,depth+1) == -1) return -1;
 			lua_settable(L,-3);
 			continue;
 		}
@@ -423,7 +422,7 @@ cases:
 			errno = 0;
 			char *endptr;
 			double d = strtod(nb,&endptr);
-			if(endptr == nb || errno == EINVAL) return -1;
+			if(endptr == nb || endptr != nb + v_len || errno == ERANGE || !isfinite(d)) return -1;
 			lua_pushnumber(L,d);
 			lua_setfield(L,-2,buf);
 			*bwalked += v_len;

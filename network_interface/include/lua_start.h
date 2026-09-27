@@ -31,5 +31,5 @@ int execute_lua_script(char *buf);
 int execute_lua_function(char *func_name, char *func_sig,...);
 void close_lua();
 void check_config_file();
-int get_function_signature(char *function_name,char *signature);
+int get_function_signature(char *function_name,char *signature,size_t capacity);
 #endif

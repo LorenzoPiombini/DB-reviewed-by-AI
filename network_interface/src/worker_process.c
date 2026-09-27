@@ -2,6 +2,10 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <signal.h>
+#include <errno.h>
+#include <poll.h>
+#include <stdarg.h>
+#include <sys/time.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -18,7 +22,6 @@
 #include "string_utilities.h"
 
 static char prog[] = "worker_process";
-static int data_to_json(char **buffer, struct Record_f *rec,int end_point);
 
 #define read64(n) (((ui64)(n)[0])	| ((ui64)(n)[1]<<8)\
 			| ((ui64)(n)[2]<<16)  	| ((ui64)(n)[3]<<24)\
@@ -33,13 +36,50 @@ static int data_to_json(char **buffer, struct Record_f *rec,int end_point);
 #define GENERAL_ERROR -1
 #define NO_ERROR 0
 
+static int format_reply(char *dst, size_t size, const char *format, ...)
+{
+    va_list args;
+    va_start(args,format);
+    int n=vsnprintf(dst,size,format,args);
+    va_end(args);
+    return n<0 || (size_t)n>=size ? -1 : 0;
+}
+
+static void item_reply(char *dst, size_t size, const char *name)
+{
+    /* Preserve a useful message without letting item names break JSON. */
+    char escaped[900];
+    size_t j=0;
+    for(const unsigned char *p=(const unsigned char *)name; *p; ++p){
+        if(j+6>=sizeof(escaped)) goto generic;
+        if(*p<' '){
+            snprintf(escaped+j,sizeof(escaped)-j,"\\u%04x",*p);
+            j+=6;
+        } else {
+            if(*p=='"' || *p=='\\') escaped[j++]='\\';
+            escaped[j++]=*p;
+        }
+    }
+    escaped[j]=0;
+    if(format_reply(dst,size,"{\"message\":\"'%s' added!\"}",escaped)==0) return;
+generic:
+    format_reply(dst,size,"%s","{\"message\":\"Item added!\"}");
+}
+
+static ssize_t send_reply(int fd, const void *data, size_t size)
+{
+    ssize_t n;
+    do { n=send(fd,data,size,MSG_NOSIGNAL); } while(n<0 && errno==EINTR);
+    return n == (ssize_t)size ? n : -1;
+}
+
 #define EIGTH_Kib 1024*8
 int work_process(int sock)
 {
-	char err[1024];
-	char succ[1024];
+	char err[1024] = {0};
+	char succ[1024] = {0};
 	int data_sock = -1;
-	char buffer[EIGTH_Kib] = {0};
+	char buffer[EIGTH_Kib + 1] = {0};
 	char *d_buff = NULL;
 
 	/*start the Lua interpreter*/
@@ -52,30 +92,43 @@ int work_process(int sock)
 	for(;;){
 		/*accept connection*/
 		check_config_file();
-		if((data_sock = accept(sock,NULL,NULL)) == -1){
-			break;
-		}
-
-		memset(buffer,0,EIGTH_Kib);
-		int r = 0;
-		if((r=read(data_sock,buffer,sizeof(buffer))) == -1){
-			close(data_sock);
-			break;
-		}
-
-		if(r == 0){
-			close(data_sock);
-			continue;
-		}
-
-		if(r == EIGTH_Kib){
-			fprintf(stderr,"REFACTOR NEEDED,SOCKET READING BUFFER %s:%d\n",__FILE__,__LINE__-14);
-			close(data_sock);
-			continue;
-		}
-
-		buffer[sizeof(buffer) - 1] = '\0';
-		int operation_to_perform = (int)(*((ui16*)buffer));	
+        if((data_sock = accept(sock,NULL,NULL)) == -1){
+            if(errno == EINTR) continue;
+            if(errno == EAGAIN || errno == EWOULDBLOCK){
+                struct pollfd event = {.fd=sock, .events=POLLIN};
+                int result;
+                do { result=poll(&event,1,-1); } while(result<0 && errno==EINTR);
+                if(result>0 && (event.revents & POLLIN)) continue;
+            }
+            break;
+        }
+        /* One client must not indefinitely stall this single database worker. */
+        struct timeval timeout = {.tv_sec=5};
+        if(setsockopt(data_sock,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout)) ||
+           setsockopt(data_sock,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout))){
+            close(data_sock);
+            continue;
+        }
+        clear_lua_stack();
+        memset(err,0,sizeof(err));
+        memset(succ,0,sizeof(succ));
+        memset(buffer,0,sizeof(buffer));
+        ssize_t r;
+        do { r=recv(data_sock,buffer,EIGTH_Kib,MSG_TRUNC); } while(r<0 && errno==EINTR);
+        if(r < 2 || r > EIGTH_Kib){ close(data_sock); continue; }
+        buffer[r] = '\0';
+        ui16 operation;
+        memcpy(&operation,buffer,sizeof(operation));
+        int operation_to_perform = operation;
+        if(operation==NEW_CUST || operation==N_ITEM || operation==NEW_SORD || operation==UPDATE_SORD){
+            /* operation + total length + at least the field-count word */
+            if(r < 12){
+                short code=GENERAL_ERROR;
+                send_reply(data_sock,&code,sizeof(code));
+                close(data_sock);
+                continue;
+            }
+        }
 
 		switch(operation_to_perform){
 		case NEW_CUST:
@@ -89,15 +142,15 @@ int work_process(int sock)
 			ui8 *data = (ui8*)&buffer[10];
 
 			long long res = -1, key = -1;
-			if(execute_lua_function("write_customers","t>ll",data,data_size-10,CUSTOMER_FILE,&res,&key) == -1 || res == 2 ){
+			if(execute_lua_function("write_customers","t>ll",data,data_size-10,CUSTOMER_FILE,&res,&key) == -1 || res != 0 ){
 				/*send error and resume*/
 				short int err_code = (short int)res;
 				memcpy(&err[0],&err_code,sizeof(short int));
 				switch(err_code){
 				case LUA_VALUE_ERROR:
-					if(copy_to_string(&err[2],1024-2,"%s",
+					if(format_reply(&err[2],1024-2,"%s",
 								"{\"message\":\"values are wrong!\"}") == -1){
-						fprintf(stderr,"(%s):copy_to_string() failed to write error,%s:%d\n",prog,__FILE__,__LINE__);
+						fprintf(stderr,"(%s):format_reply() failed to write error,%s:%d\n",prog,__FILE__,__LINE__);
 					}
 					break;
 				default:
@@ -109,9 +162,9 @@ int work_process(int sock)
 			clear_lua_stack();
 
 			memset(succ,0,1024);
-			if(copy_to_string(&succ[2],1024-2,"{\"message\":\"customer nr %d, created!\"}",key) == -1) goto new_cust_error;
+			if(format_reply(&succ[2],1024-2,"{\"message\":\"customer nr %lld, created!\"}",key) == -1) goto new_cust_error;
 
-			if(write(data_sock,succ,strlen(&succ[2])+2) == -1) goto new_cust_error;
+			if(send_reply(data_sock,succ,strlen(&succ[2])+2) == -1) goto new_cust_error;
 
 			close(data_sock);
 			data_sock = -1;
@@ -120,11 +173,11 @@ int work_process(int sock)
 new_cust_error:	
 			if(err[2] != '\0'){
 				size_t l = strlen(&err[2]) + 3; /* 2 is for short int  and 1 for '\0'*/
-				write(data_sock,err,l);
+				send_reply(data_sock,err,l);
 			}else{
 				short int e = GENERAL_ERROR;
 				memcpy(&err[0],&e,sizeof(short int));
-				write(data_sock,err,2);
+				send_reply(data_sock,err,2);
 			}
 			memset(err,0,sizeof(err));
 			close(data_sock);
@@ -136,8 +189,10 @@ new_cust_error:
 			char *function_to_execute = &buffer[2];
 
 			char sig[20] = {0};
-			if(get_function_signature(function_to_execute,sig) == -1)
+			if(get_function_signature(function_to_execute,sig,sizeof(sig)) == -1)
 				goto report_error;
+            /* Reports take no C arguments and return exactly one string. */
+            if(strcmp(sig, ">s") != 0) goto report_error;
 
 			char *json = NULL;
 			if(execute_lua_function(function_to_execute,sig,&json) == -1){
@@ -162,26 +217,26 @@ new_cust_error:
 
 			
 			ui32 limit = 0 | 0xFFFFFFFF;
-			if(size_json > (ui16)limit){
+			if(size_json > limit){
 				fprintf(stderr,"refactor needed in RPT protocol %s:%d\n",__FILE__,__LINE__);
 				free(msg);
 				goto report_error;
 			}
 			ui32 sz = (ui32)size_json;
-			if(write(data_sock,&sz,sizeof(ui32)) == -1){
+			if(send_reply(data_sock,&sz,sizeof(ui32)) == -1){
 				free(msg);
 				goto report_error;
 			}
 
-			/*do I NEED A TIMER ????*/
+			/* The receive timeout also bounds the report handshake. */
 			char ok = 0;
-			if(read(data_sock,&ok,1) == -1){
+			if(recv(data_sock,&ok,1,0) != 1){
 				free(msg);
 				goto report_error;
 			}
 
 			if(ok == '\001'){
-				if(write(data_sock,msg,size_json) == -1 ) {
+				if(send_reply(data_sock,msg,size_json) == -1 ) {
 					free(msg);
 					goto report_error;
 				}
@@ -193,7 +248,7 @@ new_cust_error:
 
 report_error:
 			memset(err,0,1024);
-			write(data_sock,err,sizeof(err));
+			send_reply(data_sock,err,sizeof(err));
 			close(data_sock);
 			data_sock = -1;
 			continue;
@@ -208,20 +263,20 @@ report_error:
 
 			long long res = -1;
 			char *item_name = NULL;
-			if(execute_lua_function("write_item","t>ls",data,data_size-10,ITEM_FILE,&res,&item_name) == -1){
+			if(execute_lua_function("write_item","t>ls",data,data_size-10,ITEM_FILE,&res,&item_name) == -1 || res != 0){
 				short int err_code = (short int)res;
 				memcpy(&err[0],&err_code,sizeof(short int));
 				switch(err_code){
 					case LUA_NEW_ITEM_WRITE_ERROR:
-						if(copy_to_string(&err[2],1024-2,"%s",
+						if(format_reply(&err[2],1024-2,"%s",
 									"{\"message\":\"Cannot Write to database, call your admin.\"}") == -1){
-							fprintf(stderr,"(%s):copy_to_string() failed to write error,%s:%d\n",prog,__FILE__,__LINE__);
+							fprintf(stderr,"(%s):format_reply() failed to write error,%s:%d\n",prog,__FILE__,__LINE__);
 						}
 						break;
 					case LUA_VALUE_ERROR:
-						if(copy_to_string(&err[2],1024-2,"%s",
+						if(format_reply(&err[2],1024-2,"%s",
 									"{\"message\":\"Check values like price_level and unit_price, values are wrong!\"}") == -1){
-							fprintf(stderr,"(%s):copy_to_string() failed to write error,%s:%d\n",prog,__FILE__,__LINE__);
+							fprintf(stderr,"(%s):format_reply() failed to write error,%s:%d\n",prog,__FILE__,__LINE__);
 						}
 						break;
 					default:
@@ -232,14 +287,12 @@ report_error:
 			}
 
 			memset(succ,0,1024);
-			if(copy_to_string(&succ[2],1024-2,"{\"message\":\"'%s' added!\"}",item_name) == -1){ 
-				goto n_item_error;
-			}
+            item_reply(&succ[2],sizeof(succ)-2,item_name);
 
 			clear_lua_stack();
 			item_name = NULL;
 			
-			if(write(data_sock,succ,strlen(&succ[2]) + 2) == -1) goto n_item_error;
+			if(send_reply(data_sock,succ,strlen(&succ[2]) + 2) == -1) goto n_item_error;
 
 			close(data_sock);
 			data_sock = -1;
@@ -247,11 +300,11 @@ report_error:
 n_item_error:
 			if(err[2] != '\0'){
 				size_t l = strlen(&err[2]) + 3; /* 2 is for short int  and 1 for '\0'*/
-				write(data_sock,err,l);
+				send_reply(data_sock,err,l);
 			}else{
 				short int e = GENERAL_ERROR;
 				memcpy(&err[0],&e,sizeof(short int));
-				write(data_sock,err,2);
+				send_reply(data_sock,err,2);
 			}
 			memset(err,0,sizeof(err));
 			close(data_sock);
@@ -267,9 +320,7 @@ n_item_error:
 
 			ui8 *data = (ui8*)&buffer[10];
 
-			if(operation_to_perform == UPDATE_SORD){
-				/*get the key of the record that we have to update*/
-			}
+			if(operation_to_perform == UPDATE_SORD) goto new_up_ords_err; /* not implemented */
 
 			long long key_ord = -1;
 			if(operation_to_perform == NEW_SORD){
@@ -281,15 +332,15 @@ n_item_error:
 					switch(err_code){
 					case LUA_SALES_ORDER_LINES_WRITE_FAILED:
 					case LUA_SALES_ORDER_HEAD_WRITE_FAILED:
-						if(copy_to_string(&err[2],1024-2,"%s",
+						if(format_reply(&err[2],1024-2,"%s",
 									"{\"message\":\"Cannot Write to database, call your admin.\"}") == -1){
-							fprintf(stderr,"(%s):copy_to_string() failed to write error,%s:%d\n",prog,__FILE__,__LINE__);
+							fprintf(stderr,"(%s):format_reply() failed to write error,%s:%d\n",prog,__FILE__,__LINE__);
 						}
 						break;
 					case LUA_VALUE_ERROR:
-						if(copy_to_string(&err[2],1024-2,"%s",
+						if(format_reply(&err[2],1024-2,"%s",
 								"{\"message\":\"Check values like Quantity,Discount and so on, some values are wrong!\"}") == -1){
-							fprintf(stderr,"(%s):copy_to_string() failed to write error,%s:%d\n",prog,__FILE__,__LINE__);
+							fprintf(stderr,"(%s):format_reply() failed to write error,%s:%d\n",prog,__FILE__,__LINE__);
 						}
 						break;
 					default:
@@ -348,7 +399,7 @@ n_item_error:
 			clear_lua_stack();
 			if(operation_to_perform == NEW_SORD){
 				memset(succ,0,1024);
-				if(copy_to_string(&succ[2],1022,"{ \"message\" : \"order nr %d, created!\"}",key_ord) == -1){
+				if(format_reply(&succ[2],1022,"{ \"message\" : \"order nr %lld, created!\"}",key_ord) == -1){
 					/*log error*/
 					close(data_sock);
 					data_sock = -1;
@@ -356,18 +407,18 @@ n_item_error:
 				}
 
 				size_t l = strlen(&succ[2])+ 3;
-				if(write(data_sock,succ,l) == -1) goto new_up_ords_err;
+				if(send_reply(data_sock,succ,l) == -1) goto new_up_ords_err;
 
 			}else if(operation_to_perform == UPDATE_SORD){
 #if 0
 				memset(succ,0,1024);
-				if(copy_to_string(&succ[2],1022,"{ \"message\" : \"order nr %s, updated!\"}",key_up) == -1){
+				if(format_reply(&succ[2],1022,"{ \"message\" : \"order nr %s, updated!\"}",key_up) == -1){
 					/*log error*/
 					goto new_up_ords_err;
 				}
 				size_t l = strlen(&succ[2])+ 3;
 
-				if(write(data_sock,succ,l) == -1) goto new_up_ords_err;
+				if(send_reply(data_sock,succ,l) == -1) goto new_up_ords_err;
 #endif
 			}
 
@@ -379,11 +430,11 @@ new_up_ords_err:
 
 			if(err[2] != '\0'){
 				size_t l = strlen(&err[2]) + 3; /* 2 is for short int  and 1 for '\0'*/
-				write(data_sock,err,l);
+				send_reply(data_sock,err,l);
 			}else{
 				short int e = GENERAL_ERROR;
 				memcpy(&err[0],&e,sizeof(short int));
-				write(data_sock,err,2);
+				send_reply(data_sock,err,2);
 			}
 			close(data_sock);
 			memset(err,0,sizeof(err));
@@ -447,7 +498,7 @@ new_up_ords_err:
 
 				memset(err,0,1024);
 				strncpy(err,erro_message,strlen(erro_message));
-				write(data_sock,err,sizeof(err));
+				send_reply(data_sock,err,sizeof(err));
 				close(data_sock);
 				continue;
 			}
@@ -463,12 +514,12 @@ new_up_ords_err:
 				}
 
 				memset(d_buff, 0,mes_l+1);
-				if(copy_to_string(d_buff,mes_l+1,"{ \"message\" : %s}",keys) == -1) {
+				if(format_reply(d_buff,mes_l+1,"{ \"message\" : %s}",keys) == -1) {
 					free(d_buff);
 					goto error_s_ord;
 				}
 
-				if(write(data_sock,d_buff,strlen(d_buff)) == -1) {
+				if(send_reply(data_sock,d_buff,strlen(d_buff)) == -1) {
 					free(d_buff);
 					goto error_s_ord;
 				}
@@ -479,16 +530,17 @@ new_up_ords_err:
 			}else{
 
 				memset(succ,0,1024);
-				if(copy_to_string(succ,mes_l,"{ \"message\" : %s}",keys) == -1) goto error_s_ord;
+				if(format_reply(succ,sizeof(succ),"{ \"message\" : %s}",keys) == -1) goto error_s_ord;
 
-				if(write(data_sock,succ,strlen(succ)) == -1) goto error_s_ord;
+				if(send_reply(data_sock,succ,strlen(succ)) == -1) goto error_s_ord;
 
 				close(data_sock);
 				continue;
 			}
 error_s_ord:
 			memset(err,0,1024);
-			write(data_sock,err,sizeof(err));
+			send_reply(data_sock,err,sizeof(err));
+            close(data_sock);
 			continue;
 		}
 		case S_ORD_CUSTOMER_GET:
@@ -497,16 +549,17 @@ error_s_ord:
 		case ITEM_GET:
 		{
 			ui32 k = 0;
-			ui8 type = is_num(&buffer[2]);
+			ui8 type = buffer[2] && strspn(&buffer[2],"0123456789") == strlen(&buffer[2]) ? UINT : STR;
 			switch(type){
 			case UINT:
 			{
 				/*convert to number */	
-				long l = string_to_long(&buffer[2]);
-				if(error_value == INVALID_VALUE){
+				errno = 0;
+				unsigned long l = strtoul(&buffer[2],NULL,10);
+				if(errno == ERANGE || l > UINT32_MAX){
 					/*log error*/
 					memset(err,0,1024);
-					write(data_sock,err,sizeof(err));
+					send_reply(data_sock,err,sizeof(err));
 					close(data_sock);
 					continue;
 				}
@@ -573,7 +626,7 @@ error_s_ord:
 				clear_lua_stack();
 				json = NULL;
 
-				if(write(data_sock,msg,size_json) == -1 ) {
+				if(send_reply(data_sock,msg,size_json) == -1 ) {
 					free(msg);
 					goto s_ord_get_exit_error;
 				}
@@ -585,7 +638,7 @@ error_s_ord:
 				continue;
 s_ord_get_exit_error:
 				memset(err,0,1024);
-				write(data_sock,err,2);
+				send_reply(data_sock,err,2);
 				close(data_sock);
 				continue;
 			}
@@ -651,7 +704,7 @@ s_ord_get_exit_error:
 				clear_lua_stack();
 				json = NULL;
 
-				if(write(data_sock,msg,size_json) == -1 ) {
+				if(send_reply(data_sock,msg,size_json) == -1 ) {
 					free(msg);
 					goto s_ord_get_exit_error;
 				}
@@ -662,36 +715,18 @@ s_ord_get_exit_error:
 			}
 			default:
 				memset(err,0,1024);
-				write(data_sock,err,sizeof(err));
+				send_reply(data_sock,err,sizeof(err));
 				close(data_sock);
 				continue;
 			}
 		}
 		default:
 			memset(err,0,1024);
-			write(data_sock,err,sizeof(err));
+			send_reply(data_sock,err,sizeof(err));
 			close(data_sock);
 			continue;
 		}
 	}
 	close_lua();
-	pid_t p = getppid();
-	if(p != -1)
-		kill(p,SIGINT);
-	exit(1);
-	return 0;/*unrechable*/
+	return -1; /* the owning WSER process decides its own shutdown policy */
 }
-
-static int data_to_json(char **buffer, struct Record_f *rec,int end_point)
-{
-	switch(end_point){	
-		case S_ORD_GET: 
-			{
-				if(parse_record_to_json(rec,buffer) == -1) return -1;
-				break;
-			}
-		default:
-			return -1;
-	}
-	return 0;
-}	
