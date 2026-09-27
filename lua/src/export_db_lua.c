@@ -16,6 +16,18 @@
 
 struct Cache dbCache[CACHE_SIZE] = {0};
 HashTable cache_register = {7,NULL,NULL};
+/* Single-worker order transaction: only record bytes and indexes are mutable.
+ * The append path borrows immutable schema/file-name storage from each cache. */
+static int order_tx_active;
+static int order_tx_slots[2];
+static int l_order_transaction(lua_State *L);
+static int order_tx_file_allowed(const char *name)
+{
+    if(!order_tx_active) return 1;
+    for(int i=0;i<2;++i)
+        if(strcmp(name,dbCache[order_tx_slots[i]].file_name)==0) return 1;
+    return 0;
+}
 static int get_free_slot_cache(struct Cache *c);
 static int check_and_free_one_cache(struct Cache *c);
 
@@ -34,6 +46,7 @@ static int l_get_offset_for_new_record(lua_State *L);
 
 /* functions that will be callable from Lua scripts*/
 static const luaL_Reg db_funcs[] = {
+    {"order_transaction",l_order_transaction},
 	{"get_record",l_get_record}, 			/* get_record(file_name,key) */
 	{"get_all_records",l_get_all_records},	/* get_all_records(file_name) */
 	{"write_record",l_write_record},		/* write_record(file_name,data) -- some optional args -- */
@@ -69,6 +82,7 @@ int luaopen_db(lua_State *L){
 static int l_get_offset_for_new_record(lua_State *L)
 {
 	char *file_name = (char*)luaL_checkstring(L,1);
+    if(!order_tx_file_allowed(file_name)) return luaL_error(L,"file outside order transaction");
 	luaL_argcheck(L, file_name != NULL, 1,"file_name expected");
 
 	struct Schema sch;
@@ -165,6 +179,7 @@ err_open_file:
 static int l_get_record(lua_State *L)
 {
 	char *file_name = (char*)luaL_checkstring(L,1);
+    if(!order_tx_file_allowed(file_name)) return luaL_error(L,"file outside order transaction");
 	luaL_argcheck(L, file_name != NULL, 1,"file_name expected");
 	int key_type = 0;
 	int n = 0;
@@ -330,6 +345,7 @@ err_exp_data_to_lua:
 static int l_get_all_records(lua_State *L)
 {
 	char *file_name = (char*)luaL_checkstring(L,1);
+    if(!order_tx_file_allowed(file_name)) return luaL_error(L,"file outside order transaction");
 	luaL_argcheck(L, file_name != NULL, 1,"file_name expected");
 
 
@@ -415,6 +431,7 @@ err_not_db_file:
 static int l_write_record(lua_State *L)
 {
 	char *file_name = (char*)luaL_checkstring(L,1);
+    if(!order_tx_file_allowed(file_name)) return luaL_error(L,"file outside order transaction");
 	luaL_argcheck(L, file_name != NULL, 1,"file_name expected");
 
 	/*second argument must be a table*/
@@ -701,7 +718,9 @@ err_invalid_data:
 
 static int l_update_record(lua_State *L)
 {
+    if(order_tx_active) return luaL_error(L,"only append writes are allowed in an order transaction");
 	char *file_name = (char*)luaL_checkstring(L,1);
+    if(!order_tx_file_allowed(file_name)) return luaL_error(L,"file outside order transaction");
 	luaL_argcheck(L, file_name != NULL, 1,"file_name expected");
 
 	/*second argument must be a table*/
@@ -956,7 +975,9 @@ err_invalid_data:
  * */
 static int l_delete_record(lua_State *L)
 {
+    if(order_tx_active) return luaL_error(L,"only append writes are allowed in an order transaction");
 	char *file_name = (char*)luaL_checkstring(L,1);
+    if(!order_tx_file_allowed(file_name)) return luaL_error(L,"file outside order transaction");
 	luaL_argcheck(L, file_name != NULL, 1,"file_name expected");
 
 
@@ -1062,7 +1083,9 @@ err_write_index:
  * */
 static int l_create_record(lua_State *L)
 {
+    if(order_tx_active) return luaL_error(L,"only append writes are allowed in an order transaction");
 	char *file_name = (char*)luaL_checkstring(L,1);
+    if(!order_tx_file_allowed(file_name)) return luaL_error(L,"file outside order transaction");
 	luaL_argcheck(L, file_name != NULL, 1,"file_name expected");
 
 	char *data_to_add = (char*)luaL_checkstring(L,2);
@@ -1116,6 +1139,7 @@ err_invalid_data:
 static int l_string_data_to_add_template(lua_State *L)
 {
 	char *file_name = (char*)luaL_checkstring(L,1);
+    if(!order_tx_file_allowed(file_name)) return luaL_error(L,"file outside order transaction");
 	luaL_argcheck(L, file_name != NULL, 1,"file_name expected");
 
 	file_t fds[3];
@@ -1259,6 +1283,7 @@ err_ask_mem:
 static int l_get_numeric_key(lua_State *L)
 {		
 	char *file_name = (char*)luaL_checkstring(L,1);
+    if(!order_tx_file_allowed(file_name)) return luaL_error(L,"file outside order transaction");
 	luaL_argcheck(L, file_name != NULL, 1,"file_name expected");
 
 	int mode = (int)luaL_checkinteger(L,2);
@@ -1445,7 +1470,8 @@ err_key_gen:
 static int l_get_all_key(lua_State *L)
 {
 	/*char *get_all_keys_for_file(int *fds,int index,int mode)*/
-	char *file_name = (char*)luaL_checkstring(L,1);	
+	char *file_name = (char*)luaL_checkstring(L,1);
+    if(!order_tx_file_allowed(file_name)) return luaL_error(L,"file outside order transaction");
 	luaL_argcheck(L, file_name != NULL, 1,"file_name expected");
 
 	int index = (int)luaL_checkinteger(L,2);	
@@ -1559,7 +1585,9 @@ error_key_null_from_cache:
 
 static int l_save_key_at_index(lua_State *L)
 {
-	char *file_name = (char*)luaL_checkstring(L,1);	
+    if(order_tx_active) return luaL_error(L,"only append writes are allowed in an order transaction");
+	char *file_name = (char*)luaL_checkstring(L,1);
+    if(!order_tx_file_allowed(file_name)) return luaL_error(L,"file outside order transaction");
 	luaL_argcheck(L, file_name != NULL, 1,"file_name expected");
 
 	void *key = NULL;
@@ -2044,6 +2072,7 @@ static int get_free_slot_cache(struct Cache *c)
 
 static int check_and_free_one_cache(struct Cache *c)
 {
+    if(order_tx_active) return -1; /* pinned until commit/rollback */
 	int i;
 	for(i = 0; i < (int)CACHE_SIZE; i++){
 		if((long)(c[i].used - c[i].ts) > (long) THREE_HOURS){
@@ -2066,8 +2095,125 @@ static int check_and_free_one_cache(struct Cache *c)
 	return -1;
 }
 
+/* Free only transaction-owned data. Schema/name are borrowed, never freed. */
+static void order_tx_free(struct Cache *cache)
+{
+    if(cache->index_file){
+        for(int i=0;i<cache->indexes;++i){
+            for(int b=0;b<MAX_HT_BUCKET;++b){
+                Node *node=cache->index_file[i].data_map[b];
+                while(node){
+                    Node *next=node->next;
+                    if(node->key.type==STR) free(node->key.k.s);
+                    free(node); node=next;
+                }
+            }
+        }
+        free(cache->index_file);
+    }
+    free(cache->data_file.mem);
+    cache->index_file=NULL;
+    cache->data_file.mem=NULL;
+}
+
+static int order_tx_clone(const struct Cache *src, struct Cache *dst)
+{
+    *dst=*src;
+    dst->index_file=NULL; dst->data_file.mem=NULL;
+    if(src->indexes<=0 || !src->index_file || src->data_file.size>src->data_file.capacity ||
+       (src->data_file.size && !src->data_file.mem)) return -1;
+    dst->index_file=calloc((size_t)src->indexes,sizeof(HashTable));
+    if(!dst->index_file) return -1;
+    for(int i=0;i<src->indexes;++i){
+        const HashTable *from=&src->index_file[i];
+        HashTable *to=&dst->index_file[i];
+        if(from->size<1 || from->size>MAX_HT_BUCKET) goto failed;
+        to->size=from->size; to->write=from->write;
+        for(int b=0;b<MAX_HT_BUCKET;++b){
+            Node **tail=&to->data_map[b];
+            for(const Node *node=from->data_map[b];node;node=node->next){
+                Node *copy=malloc(sizeof(*copy));
+                if(!copy) goto failed;
+                *copy=*node; copy->next=NULL;
+                if(copy->key.type==STR){
+                    copy->key.k.s=strdup(node->key.k.s);
+                    if(!copy->key.k.s){ free(copy); goto failed; }
+                }
+                *tail=copy; tail=&copy->next;
+            }
+        }
+    }
+    if(src->data_file.capacity){
+        if(src->data_file.capacity>SIZE_MAX) goto failed;
+        dst->data_file.mem=malloc((size_t)src->data_file.capacity);
+        if(!dst->data_file.mem) goto failed;
+        if(src->data_file.size) memcpy(dst->data_file.mem,src->data_file.mem,(size_t)src->data_file.size);
+    }
+    return 0;
+failed:
+    order_tx_free(dst);
+    return -1;
+}
+
+/* db.order_transaction(head_file, lines_file, function() return key, status end)
+ * The callback is protected: Lua exceptions also restore both original caches.
+ * Commit is an in-memory swap, not a durable on-disk transaction. */
+static int l_order_transaction(lua_State *L)
+{
+    const char *names[2];
+    names[0]=luaL_checkstring(L,1); names[1]=luaL_checkstring(L,2);
+    luaL_checktype(L,3,LUA_TFUNCTION);
+    if(order_tx_active || strcmp(names[0],names[1])==0 || is_test(L)) goto failed;
+    if(!lua_checkstack(L,8)) goto failed;
+    /* Load both files before staging; reject unavailable/full caches instead
+     * of allowing the append routine to fall back to direct disk writes. */
+    for(int i=0;i<2;++i){
+        lua_pushcfunction(L,l_get_offset_for_new_record);
+        lua_pushstring(L,names[i]);
+        if(lua_pcall(L,1,1,0)!=LUA_OK){ lua_pop(L,1); goto failed; }
+        int available=lua_isinteger(L,-1);
+        lua_pop(L,1);
+        if(!available) goto failed;
+    }
+    struct Cache original[2], staged[2];
+    memset(staged,0,sizeof(staged));
+    for(int i=0;i<2;++i){
+        file_offset slot=get((void*)names[i],&cache_register,STR);
+        if(slot<0 || slot>=CACHE_SIZE || !dbCache[slot].index_file ||
+           !dbCache[slot].file_name || strcmp(names[i],dbCache[slot].file_name)!=0) goto clone_failed;
+        order_tx_slots[i]=(int)slot;
+        original[i]=dbCache[slot];
+        if(order_tx_clone(&original[i],&staged[i])==-1) goto clone_failed;
+    }
+    if(order_tx_slots[0]==order_tx_slots[1]) goto clone_failed;
+    lua_pushvalue(L,3); /* No allocating Lua calls between swapping and pcall. */
+    for(int i=0;i<2;++i) dbCache[order_tx_slots[i]]=staged[i];
+    order_tx_active=1;
+    int status=lua_pcall(L,0,2,0);
+    int commit=status==LUA_OK && lua_isinteger(L,-2) && lua_tointeger(L,-2)>=0 &&
+               lua_isinteger(L,-1) && lua_tointeger(L,-1)==0;
+    for(int i=0;i<2;++i){
+        if(commit) order_tx_free(&original[i]);
+        else {
+            order_tx_free(&dbCache[order_tx_slots[i]]);
+            dbCache[order_tx_slots[i]]=original[i];
+        }
+    }
+    order_tx_active=0;
+    if(status!=LUA_OK){ lua_pop(L,1); goto failed; }
+    if(!commit && !(lua_isnil(L,-2) && lua_isinteger(L,-1) && lua_tointeger(L,-1)!=0)){
+        lua_pop(L,2); goto failed;
+    }
+    return 2;
+clone_failed:
+    for(int i=0;i<2;++i) order_tx_free(&staged[i]);
+failed:
+    lua_pushnil(L); lua_pushinteger(L,-25); return 2;
+}
+
 static int is_test(lua_State *L)
-{	
+{
+    if(order_tx_active) return 0; /* never bypass cache for a staged write */
 	lua_getglobal(L,"TEST");
 	int b = lua_toboolean(L,-1);
 	if(b){

@@ -21,6 +21,7 @@ SALES_ORDER_HEAD_WRITE_FAILED = -21
 SALES_ORDER_LINES_WRITE_FAILED = -22
 -- TODO -23 is taken, i need to verify where and why
 NEW_ITEM_WRITE_FAILED = -24
+ORDER_TRANSACTION_FAILED = -25
 
 --- database files
 -- name_file = "db/name_file" /* i do not need it for now */
@@ -208,26 +209,27 @@ function write_orders(data)
 		end
 	end
 
-	local next_head_key = get_numeric_key(sales_orders.head,BASE,ORDER_BASE)
-	if next_head_key == nil then return nil,-23 end
-	for i = 1, count do
+    if type(db.order_transaction) ~= "function" then return nil,ORDER_TRANSACTION_FAILED end
+    return db.order_transaction(sales_orders.head, sales_orders.lines, function()
+		local next_head_key = get_numeric_key(sales_orders.head,BASE,ORDER_BASE)
+		if next_head_key == nil then return nil,-23 end
+		for i = 1, count do
+			--create the Record_f like structure
+			sol[i].file_name = sales_orders.lines
+			sol[i].offset = g_offset(sales_orders.lines)
+			local key_line = string.format("%d/%d", next_head_key, i)
+			local kl, ord_lines = w_rec(sales_orders.lines, sol[i], key_line)
+			if kl == nil or ord_lines == nil then return nil, SALES_ORDER_LINES_WRITE_FAILED end
+		end
 		--create the Record_f like structure
-		sol[i].file_name = sales_orders.lines		
-		sol[i].offset = g_offset(sales_orders.lines)
-		local key_line = string.format("%d/%d", next_head_key, i)
-		local kl, ord_lines = w_rec(sales_orders.lines, sol[i], key_line)
-		if ord_lines == nil then return nil, SALES_ORDER_LINES_WRITE_FAILED end
-	end
-
-	--create the Record_f like structure
-	local soh_t = {}
-	soh_t.file_name = sales_orders.head
-	soh_t.offset =  g_offset(sales_orders.head);
-	soh_t.fields = soh
-
-	local kh, ord_head = w_rec(sales_orders.head, soh_t,next_head_key)
-	if ord_head == nil then return nil, SALES_ORDER_HEAD_WRITE_FAILED end
-	return next_head_key,0
+		local soh_t = {}
+		soh_t.file_name = sales_orders.head
+		soh_t.offset =  g_offset(sales_orders.head);
+		soh_t.fields = soh
+		local kh, ord_head = w_rec(sales_orders.head, soh_t,next_head_key)
+		if kh == nil or ord_head == nil then return nil, SALES_ORDER_HEAD_WRITE_FAILED end
+		return next_head_key,0
+    end)
 end
 
 function wait(orders_head, orders_lines)

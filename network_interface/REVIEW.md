@@ -51,10 +51,10 @@ WSER; this is not a TCP framing implementation.
    `used - now_seconds()` for its idle timeout, normally negative. It also runs
    only around requests/accept, and missing configuration bypasses maintenance.
    Correcting this must be paired with the storage flush review above.
-4. **Storage failures can still leave partial orders.** Whole-order quantity
-   validation now precedes writes, and line/head error codes reach the worker.
-   However, a disk/cache write failure after earlier lines were written still
-   has no rollback. Transactional writes remain a separate requirement.
+4. **Order rollback now covers operation failures in memory.** The extension
+   below stages the head and line caches together. Failed writes and Lua errors
+   discard both staged versions. Later multi-file disk flushing is still not
+   crash-atomic and needs recovery/journaling to survive an interrupted flush.
 
 These findings are based on source inspection. This patch does not establish
 storage durability or validate the database engine as a whole.
@@ -161,3 +161,51 @@ checking disabled in this environment as documented above. The eviction test
 uses GCC's `--param asan-globals=0` to let the linker discard unused Lua entry
 points; other compiler choices need an equivalent setting. These are not
 on-disk crash-recovery tests. Both Makefiles are unchanged.
+
+## Order rollback extension
+
+`network_interface/lua/db_config.lua:write_orders` validates the request, then
+runs key generation, all line appends, and the header append inside
+`db.order_transaction(head_file, lines_file, callback)`. The callback returns
+`key, 0` on success or `nil, error_code` on failure. The wrapper is implemented
+in the existing Lua module source, so neither Makefile changes.
+
+Before invoking the callback the module loads both files into cache and clones
+all their index chains and cached record bytes. Schema and filename storage
+remain shared and immutable for this append-only operation. The worker runs
+against the staged buffers; the cache register keeps the same two slot numbers.
+On success the originals are released. On any reported write failure, malformed
+callback result or protected Lua exception, staged buffers are discarded and
+both original caches restored, without allocation or I/O during rollback.
+Snapshot allocation or cache-load failure aborts before the callback runs.
+
+Transactions cannot nest. Cache eviction, direct disk test mode, unrelated
+files, and update/delete/create/index-edit APIs are excluded while an order
+transaction is active. The normal cached append routine handles the writes;
+there is no direct-disk fallback for these pinned files. Existing sequential
+single-worker execution makes the two-cache swap unobservable between requests.
+SIGTERM/SIGINT handlers only set a flag, so shutdown flushing occurs after the
+protected order call has committed or rolled back.
+
+Also corrected the order's write-result checks: the module returns `nil,
+"error message"` on failure. Checking only the second return value used to
+mistake that error string for a successful record. Both the key and record must
+now be non-nil. Transaction setup/Lua errors use code -25 and receive an error
+response from the worker. Deploy db.so, libworker.so and db_config.lua together;
+missing transaction support fails closed before order writes.
+
+Tests run the real transaction implementation and real Lua order function with
+substituted record writes and file loading. They modify record bytes and both
+primary/secondary index chains before injected failures at the first line,
+second line and header; each must restore the original buffers and indexes.
+Coverage includes Lua exceptions, successful retry after rollback, each of 16
+snapshot allocation failures, unavailable files, nested transactions, unrelated
+file access, invalid callback results, and disabled disk test mode. Existing
+interface, eviction and shutdown suites also pass ASan/UBSan (LeakSanitizer is
+unavailable here).
+
+Costs/limits: staging temporarily duplicates the two files' cache buffers and
+indexes, so large orders/files need additional RAM. This is logical rollback
+for order creation, not a general transaction API or write-ahead log. It does
+not make later cache flushing atomic or durable against SIGKILL/power loss.
+No real disk crash-recovery test is claimed.

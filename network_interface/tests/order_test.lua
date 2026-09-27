@@ -1,11 +1,12 @@
+db.order_transaction=function(head,lines,fn) return fn() end
 -- Run against the real db_config.lua with storage functions substituted.
 local writes, keys, fail_line, fail_head, fail_key
 get_numeric_key = function() keys=keys+1; if fail_key then return nil end; return 101 end
 g_offset = function() return 0 end
 write_record = function(file, record, key)
     writes=writes+1
-    if file==sales_orders.lines and fail_line then return nil,nil end
-    if file==sales_orders.head and fail_head then return nil,nil end
+    if file==sales_orders.lines and fail_line then return nil,"storage error" end
+    if file==sales_orders.head and fail_head then return nil,"storage error" end
     return key,record
 end
 local function order()

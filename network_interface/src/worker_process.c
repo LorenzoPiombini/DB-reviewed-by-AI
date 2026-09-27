@@ -45,6 +45,7 @@ static char prog[] = "worker_process";
 #define LUA_SALES_ORDER_LINES_WRITE_FAILED -22
 #define LUA_GET_NUMERIC_KEY_FAILED -23
 #define LUA_NEW_ITEM_WRITE_ERROR -24
+#define LUA_ORDER_TRANSACTION_FAILED -25
 #define GENERAL_ERROR -1
 #define NO_ERROR 0
 
@@ -364,6 +365,7 @@ n_item_error:
 					short int err_code = (short int)key_ord;
 					memcpy(&err[0],&err_code,sizeof(short int));
 					switch(err_code){
+					case LUA_ORDER_TRANSACTION_FAILED:
 					case LUA_SALES_ORDER_LINES_WRITE_FAILED:
 					case LUA_SALES_ORDER_HEAD_WRITE_FAILED:
 						if(format_reply(&err[2],1024-2,"%s",

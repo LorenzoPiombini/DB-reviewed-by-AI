@@ -28,3 +28,10 @@ ${CC:-gcc} --param asan-globals=0 -std=gnu11 -g -O1 -ffunction-sections -fdata-s
     network_interface/tests/cache_eviction_test.c -Wl,--gc-sections \
     $LUA_LIBS -o "$build_dir/cache_eviction_test"
 "$build_dir/cache_eviction_test"
+
+${CC:-gcc} --param asan-globals=0 -std=gnu11 -g -O1 -ffunction-sections -fdata-sections \
+    ${SANITIZERS:--fsanitize=address,undefined} -fno-omit-frame-pointer \
+    $LUA_CFLAGS -Iinclude -Ilua/include \
+    network_interface/tests/order_transaction_test.c -Wl,--gc-sections \
+    $LUA_LIBS -o "$build_dir/order_transaction_test"
+"$build_dir/order_transaction_test"
