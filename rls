@@ -1,0 +1,6 @@
+#!/bin/bash
+
+sudo make clean
+clear
+sudo make build
+
