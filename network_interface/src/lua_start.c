@@ -15,7 +15,10 @@
 #include "json.h"
 
 lua_State *L = NULL;
-static time_t sec = 0; 
+static time_t sec = 0;
+static char *loaded_config_file = NULL;
+static time_t last_cache_flush = 0;
+static time_t last_cache_check = 0;
 static int top_lua_stack = 0;
 
 static const int CACHE_SIZE = 30;
@@ -29,8 +32,11 @@ static int create_nested_lua_table(ui8 *data,size_t data_size,size_t *bwalked, u
 
 int init_lua(char *config_file)
 {
+    if(L || !config_file) return -1;
+    loaded_config_file = strdup(config_file);
+    if(!loaded_config_file) return -1;
 	L = luaL_newstate();
-    if(!L) return -1;
+    if(!L) { free(loaded_config_file); loaded_config_file=NULL; return -1; }
 	luaL_openlibs(L);
 
 	if(load(L,config_file) == -1) goto failed;
@@ -50,7 +56,9 @@ int init_lua(char *config_file)
 	tbl_to_rec = (table_to_record_fn)lua_touserdata(L,-1);
 	lua_pop(L,1);
 
-	check_config_file();
+    struct stat config_stat;
+    if(stat(loaded_config_file,&config_stat) == 0) sec = config_stat.st_mtime;
+    last_cache_flush = now_seconds();
 	top_lua_stack = lua_gettop(L);
 	return 0;
 failed:
@@ -82,29 +90,26 @@ void close_lua()
     cache_r_ptr=NULL;
     tbl_to_rec=NULL;
     top_lua_stack=0;
+    free(loaded_config_file);
+    loaded_config_file=NULL;
+    sec=0;
+    last_cache_flush=0;
+    last_cache_check=0;
 }
 
 void check_config_file()
 {
-	struct stat file_data;
-	if(stat("/root/db/lua/db_config.lua",&file_data) == -1) {
-		return;
-	}
-
-	if(sec == 0){
-		sec = file_data.st_mtim.tv_sec;
-		if(dbcache_ptr) free_inactive_caches(dbcache_ptr);
-		return;
-	}
-
-	if(file_data.st_mtim.tv_sec > sec){
-		clear_lua_stack();
-		if(load(L,"/root/db/lua/db_config.lua") == -1) return;
-		sec = file_data.st_mtim.tv_sec;
-		top_lua_stack = lua_gettop(L);
-	}
-
-	if(dbcache_ptr) free_inactive_caches(dbcache_ptr);
+    /* Maintenance must run even when the configuration was moved/deleted. */
+    if(dbcache_ptr) free_inactive_caches(dbcache_ptr);
+    if(!L || !loaded_config_file) return;
+    struct stat file_data;
+    if(stat(loaded_config_file,&file_data) == -1) return;
+    if(file_data.st_mtime != sec){
+        int saved_top = lua_gettop(L);
+        int result = load(L,loaded_config_file);
+        lua_settop(L,saved_top); /* A failed reload leaves an error on the stack. */
+        if(result == 0) sec = file_data.st_mtime;
+    }
 }
 void clear_lua_stack()
 {
@@ -272,31 +277,34 @@ static int load(lua_State *L, char *file_config)
 
 static void free_inactive_caches(struct Cache *c)
 {
-	int i;
-	for(i = 0; i < CACHE_SIZE; i++){
-		if(c[i].ts == 0 || c[i].used == 0) continue;
-
-		if((long)(c[i].used - c[i].ts) > (long) THREE_HOURS){
-			if(write_cache_to_disk(&c[i]) == -1){
-				fprintf(stderr,"!!! CANNOT WRITE THE CACHE TO FILE !!!!!!%s:%d\n",__FILE__,__LINE__);
-				return;
-			}
-
-			Node *r = ht_delete((void*)c[i].file_name,cache_r_ptr,STR);
-			if(!r){
-				fprintf(stderr,"!!! SOMENTHIG WRONG WITH THE CACHE!!!%s:%d\n",__FILE__,__LINE__);
-				return;
-			}
-			free_ht_node(r);
-			free_cache(&c[i]);
-		}else if((long)(c[i].used - now_seconds()) > (long) TWENTY_MINUTES){
-			/*Just flush the content to disk*/
-			if(write_cache_to_disk(&c[i]) == -1){
-				fprintf(stderr,"!!! CANNOT WRITE THE CACHE TO FILE !!!!!!%s:%d\n",__FILE__,__LINE__);
-				return;
-			}
-		}
-	}
+    time_t now = now_seconds();
+    if(now <= 0) return;
+    /* On a clock adjustment, start a new interval instead of underflowing. */
+    if(last_cache_flush == 0 || now < last_cache_flush) last_cache_flush = now;
+    int periodic_flush = difftime(now,last_cache_flush) >= TWENTY_MINUTES;
+    if(!periodic_flush && last_cache_check && now >= last_cache_check &&
+       difftime(now,last_cache_check) < 60) return;
+    last_cache_check = now; /* Bound retries for a failed inactive-cache flush. */
+    if(periodic_flush) last_cache_flush = now;
+    for(int i = 0; i < CACHE_SIZE; ++i){
+        if(!c[i].file_name || !c[i].index_file) continue;
+        time_t last_used = c[i].used ? c[i].used : c[i].ts;
+        int inactive = last_used > 0 && difftime(now,last_used) >= THREE_HOURS;
+        if(!inactive && !periodic_flush) continue;
+        if(write_cache_to_disk(&c[i]) == -1){
+            fprintf(stderr,"cache maintenance: failed to flush %s\n",c[i].file_name);
+            continue; /* Retain this cache; still attempt the other files. */
+        }
+        if(inactive){
+            Node *entry = ht_delete(c[i].file_name,cache_r_ptr,STR);
+            if(!entry){
+                fprintf(stderr,"cache maintenance: missing mapping for %s\n",c[i].file_name);
+                continue;
+            }
+            free_ht_node(entry);
+            free_cache(&c[i]);
+        }
+    }
 }
 
 /* 

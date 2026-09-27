@@ -35,3 +35,16 @@ ${CC:-gcc} --param asan-globals=0 -std=gnu11 -g -O1 -ffunction-sections -fdata-s
     network_interface/tests/order_transaction_test.c -Wl,--gc-sections \
     $LUA_LIBS -o "$build_dir/order_transaction_test"
 "$build_dir/order_transaction_test"
+
+${CC:-cc} -std=gnu11 -g -O1 -ffunction-sections -fdata-sections \
+    ${SANITIZERS:--fsanitize=address,undefined} -fno-omit-frame-pointer \
+    -Iinclude network_interface/tests/file_io_test.c src/file.c \
+    -Wl,--gc-sections,--wrap=read,--wrap=write -o "$build_dir/file_io_test"
+"$build_dir/file_io_test"
+
+${CC:-cc} -std=gnu11 -g -O1 -ffunction-sections -fdata-sections \
+    ${SANITIZERS:--fsanitize=address,undefined} -fno-omit-frame-pointer \
+    $LUA_CFLAGS -Iinclude -Inetwork_interface/include -I"$WSER_INCLUDE" \
+    network_interface/tests/cache_maintenance_test.c -Wl,--gc-sections \
+    $LUA_LIBS -o "$build_dir/cache_maintenance_test"
+"$build_dir/cache_maintenance_test"

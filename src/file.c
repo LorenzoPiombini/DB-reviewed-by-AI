@@ -40,9 +40,10 @@ int open_file(char *fileName, int use_trunc, file_t *fd)
 		*fd = open(fileName, O_WRONLY | O_TRUNC, S_IRWXU);
 	}
 
-	if ( errno != 0) {
-		*fd = errno;
-		return errno;			
+	if (*fd == -1) {
+		ERROR_CODE_FILE_OPERATION = errno;
+		*fd = -1; /* An errno value is not a file descriptor. */
+		return -1;
 	}
 #elif defined(_WIN32)
 	DWORD creation = 0;	
@@ -441,44 +442,55 @@ static size_t get_disk_size_record(struct Record_f *rec)
 	return size;
 }
 
+/* These helpers transfer a complete field, never an arbitrary prefix. */
 int os_read(file_t fd, void* data, size_t size)
 {
+    unsigned char *cursor = data;
+    while(size){
 #if defined(__linux__) || defined(__APPLE__)
-		if(read(fd,data,size) == -1){
-			fprintf(stderr,"(%s):read from file failed,%s:%d.\n",prog,__FILE__,__LINE__);
-			return -1;
-		}
-
+        /* A bounded chunk also keeps the count representable by ssize_t. */
+        size_t chunk = size > 0x40000000U ? 0x40000000U : size;
+        ssize_t received = read(fd,cursor,chunk);
+        if(received < 0 && errno == EINTR) continue;
+        if(received <= 0){
+            if(received == 0) errno = EIO; /* Truncated field / unexpected EOF. */
+            return -1;
+        }
 #elif defined(_WIN32)
-		DWORD bread = 0;
-		if(!ReadFile(fd,data,size,&bread,NULL)){
-			fprintf(stderr,"(%s):read from file failed,%s:%d.\n",prog,__FILE__,__LINE__);
-			return -1;
-		}
+        DWORD received = 0;
+        DWORD chunk = size > 0x40000000U ? 0x40000000U : (DWORD)size;
+        if(!ReadFile(fd,cursor,chunk,&received,NULL)) return -1;
+        if(!received){ SetLastError(ERROR_HANDLE_EOF); return -1; }
 #endif
-		return 0;
-
+        cursor += received;
+        size -= received;
+    }
+    return 0;
 }
+
 int os_write(file_t fd, void* data, size_t size)
 {
-
+    const unsigned char *cursor = data;
+    while(size){
 #if defined(__linux__) || defined(__APPLE__)
-		if(write(fd,data,size) == -1){
-			fprintf(stderr,"(%s):read from file failed,%s:%d.\n",prog,__FILE__,__LINE__);
-			return -1;
-		}
-
+        size_t chunk = size > 0x40000000U ? 0x40000000U : size;
+        ssize_t written = write(fd,cursor,chunk);
+        if(written < 0 && errno == EINTR) continue;
+        if(written <= 0){
+            if(written == 0) errno = EIO;
+            return -1;
+        }
 #elif defined(_WIN32)
-		DWORD written = 0;
-		if(!WriteFile(fd,data,size,&written,NULL)){
-			fprintf(stderr,"(%s):read from file failed,%s:%d.\n",prog,__FILE__,__LINE__);
-			return -1;
-		}
+        DWORD written = 0;
+        DWORD chunk = size > 0x40000000U ? 0x40000000U : (DWORD)size;
+        if(!WriteFile(fd,cursor,chunk,&written,NULL)) return -1;
+        if(!written){ SetLastError(ERROR_WRITE_FAULT); return -1; }
 #endif
-		return 0;
+        cursor += written;
+        size -= written;
+    }
+    return 0;
 }
-
-
 
 static int is_array_last_block(file_t fd, struct Ram_file *ram, int element_nr, size_t bytes_each_element, int type)
 {
@@ -7335,10 +7347,14 @@ int get_all_record(file_t fd, struct Ram_file *ram)
 {
 
 	file_offset eof = go_to_EOF(fd);
-	if(begin_in_file(fd) == -1) return -1;
+	if(eof < 0 || begin_in_file(fd) == -1) return -1;
 
-	if(init_ram_file(ram,(size_t)eof) == -1) return -1;	
-	if(os_read(fd,ram->mem,ram->capacity) == -1) return -1;
+	if(init_ram_file(ram,(size_t)eof) == -1) return -1;
+    /* An empty file gets spare RAM capacity, but has no bytes to read. */
+	if(os_read(fd,ram->mem,(size_t)eof) == -1){
+        close_ram_file(ram);
+        return -1;
+    }
 	ram->size = (size_t)eof;
 	ram->offset = 0;
 	return 0;

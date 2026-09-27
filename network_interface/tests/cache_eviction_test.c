@@ -6,6 +6,7 @@
 #include "../../lua/src/export_db_lua.c"
 static int registered, flushed, freed, node_freed, fail_write, fail_delete;
 static Node entry;
+long now_seconds(void) { return 2 * THREE_HOURS + 2; }
 int write_cache_to_disk(struct Cache *c)
 {
     assert(c==dbCache && registered);

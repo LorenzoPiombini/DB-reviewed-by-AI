@@ -2075,7 +2075,9 @@ static int check_and_free_one_cache(struct Cache *c)
     if(order_tx_active) return -1; /* pinned until commit/rollback */
 	int i;
 	for(i = 0; i < (int)CACHE_SIZE; i++){
-		if((long)(c[i].used - c[i].ts) > (long) THREE_HOURS){
+        time_t last_used = c[i].used ? c[i].used : c[i].ts;
+		if(c[i].file_name && c[i].index_file && last_used > 0 &&
+           difftime(now_seconds(),last_used) >= THREE_HOURS){
 			if(write_cache_to_disk(&c[i]) == -1){
 				fprintf(stderr,"cannot write cache to disk!!!%s:%d\n",__FILE__,__LINE__);
 				return -1;
