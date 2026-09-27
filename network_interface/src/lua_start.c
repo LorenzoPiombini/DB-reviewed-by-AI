@@ -58,6 +58,22 @@ failed:
 	return -1;
 }
 
+/* Call only from normal execution, never from a signal handler. */
+int flush_lua_caches(void)
+{
+    int result = 0;
+    if(!dbcache_ptr) return 0;
+    for(int i = 0; i < CACHE_SIZE; ++i){
+        struct Cache *cache = &dbcache_ptr[i];
+        if(!cache->file_name || !cache->index_file) continue;
+        if(write_cache_to_disk(cache) == -1){
+            fprintf(stderr,"database shutdown: failed to flush %s\n",cache->file_name);
+            result = -1;
+        }
+    }
+    return result; /* Attempt every slot, even if an earlier write failed. */
+}
+
 void close_lua()
 {
 	if(L) lua_close(L);

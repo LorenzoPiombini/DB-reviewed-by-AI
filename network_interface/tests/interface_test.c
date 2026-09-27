@@ -2,6 +2,11 @@
 #include <assert.h>
 #include <errno.h>
 #include <stdint.h>
+#include <signal.h>
+#include <poll.h>
+#include <fcntl.h>
+#include <sys/prctl.h>
+#include <sys/wait.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,8 +18,28 @@
 #include "end_points.h"
 #include "json.h"
 
-/* Cache persistence is outside this test's scope. Fail if it is reached. */
-int write_cache_to_disk(struct Cache *c) { (void)c; abort(); }
+/* Storage is substituted: test shutdown ordering and failure propagation. */
+static struct Cache test_cache[30];
+static HashTable test_index;
+static int shutdown_mode, in_operation, flushed, fail_flush;
+static pid_t signal_child;
+static int parent_ready=-1, parent_result=-1;
+static void send_termination_later(void)
+{
+    pid_t target=getpid();
+    signal_child=fork(); assert(signal_child>=0);
+    if(signal_child==0){ usleep(20000); _exit(kill(target,SIGTERM)!=0); }
+}
+int write_cache_to_disk(struct Cache *c)
+{
+    assert(shutdown_mode && !in_operation && L);
+    assert(c==&test_cache[0] || c==&test_cache[29]);
+    ++flushed;
+    if(parent_result>=0) assert(write(parent_result,"F",1)==1);
+    /* Repeated termination requests must not interrupt cleanup. */
+    raise(SIGTERM);
+    return fail_flush && c==&test_cache[0] ? -1 : 0;
+}
 void free_cache(struct Cache *c) { (void)c; abort(); }
 Node *ht_delete(void *k, HashTable *t, int type)
 { (void)k; (void)t; (void)type; abort(); }
@@ -24,12 +49,23 @@ void __wrap_check_config_file(void) {}
 
 static int calls, accepted, queued, interrupted;
 static int server_fds[256], client_fds[256];
-static int counted(lua_State *state) { (void)state; ++calls; return 0; }
+static int counted(lua_State *state)
+{
+    (void)state; ++calls;
+    if(shutdown_mode==3){ in_operation=1; raise(SIGTERM); in_operation=0; }
+    return 0;
+}
 int __wrap_init_lua(char *path)
 {
     (void)path;
     L=luaL_newstate(); assert(L);
     luaL_openlibs(L);
+    if(shutdown_mode){
+        memset(test_cache,0,sizeof(test_cache));
+        test_cache[0].file_name="first"; test_cache[0].index_file=&test_index;
+        test_cache[29].file_name="last"; test_cache[29].index_file=&test_index;
+        dbcache_ptr=test_cache;
+    }
     lua_pushcfunction(L,counted); lua_setglobal(L,"counted");
     assert(luaL_dostring(L,
         "function inspect(t) counted(); return t.fields.x end\n"
@@ -43,7 +79,36 @@ int __wrap_init_lua(char *path)
         "function bad_report(i) counted(); return 'bad' end\n"
         "bad_report_s='i>s'\n"
         "huge_report_s=string.rep('s',100)\n") == LUA_OK);
+    if(parent_ready>=0){ assert(write(parent_ready,"R",1)==1); close(parent_ready); parent_ready=-1; }
     return 0;
+}
+int __real_poll(struct pollfd *, nfds_t, int);
+int __wrap_poll(struct pollfd *fds, nfds_t n, int timeout)
+{
+    assert(n==1 && timeout==250);
+    if(shutdown_mode==6) return __real_poll(fds,n,timeout);
+    if(shutdown_mode==4){
+        if(!signal_child) send_termination_later();
+        return __real_poll(fds,n,timeout);
+    }
+    if(shutdown_mode==1 || shutdown_mode==2){
+        raise(shutdown_mode==1 ? SIGTERM : SIGINT);
+        errno=EINTR; return -1;
+    }
+    fds[0].revents=POLLIN;
+    return 1;
+}
+static int run_worker(void)
+{
+    int pair[2], before, after;
+    assert(socketpair(AF_UNIX,SOCK_SEQPACKET,0,pair)==0);
+    int flags=fcntl(pair[0],F_GETFL);
+    assert(prctl(PR_GET_PDEATHSIG,&before)==0);
+    int result=work_process(pair[0]);
+    assert(prctl(PR_GET_PDEATHSIG,&after)==0 && before==after);
+    assert(fcntl(pair[0],F_GETFL)==flags);
+    close(pair[0]); close(pair[1]);
+    return result;
 }
 int __wrap_accept(int fd, struct sockaddr *addr, socklen_t *len)
 {
@@ -51,7 +116,10 @@ int __wrap_accept(int fd, struct sockaddr *addr, socklen_t *len)
     if(!interrupted++){ errno=EINTR; return -1; }
     /* Successful calls retain Lua results only until the next request. */
     assert(lua_gettop(L)<=2);
-    if(accepted<queued) return server_fds[accepted++];
+    if(accepted<queued){
+        if(shutdown_mode==5) send_termination_later();
+        return server_fds[accepted++];
+    }
     errno=EBADF;
     return -1;
 }
@@ -174,7 +242,7 @@ static void worker_tests(void)
     for(int i=0;i<100;++i) request(CUSTOMER_GET_ALL,NULL);
     int overflow=request(CUSTOMER_GET,"4294967296");
     int key=request(CUSTOMER_GET,"4294967295");
-    assert(work_process(-1)==-1);
+    assert(run_worker()==-1);
     assert(L==NULL && calls==110); /* 6 writes, 2 reports, 101 lists, 1 key */
     error_reply(short_packet); error_reply(short_length); error_reply(update);
     char b[72000];
@@ -207,8 +275,67 @@ static void worker_tests(void)
     }
     puts("PASS: packet bounds, error replies, 64-bit IDs, escaped JSON, reports, repeated requests, key range, socket closure");
 }
+static void shutdown_tests(void)
+{
+    for(shutdown_mode=1;shutdown_mode<=5;++shutdown_mode){
+        for(fail_flush=0;fail_flush<=1;++fail_flush){
+            calls=accepted=queued=interrupted=flushed=0;
+            signal_child=0;
+            if(shutdown_mode==5){
+                int pair[2]; assert(socketpair(AF_UNIX,SOCK_SEQPACKET,0,pair)==0);
+                server_fds[0]=pair[0]; client_fds[0]=pair[1]; queued=1;
+            }
+            if(shutdown_mode==3) write_request(NEW_CUST);
+            assert(run_worker()==(fail_flush ? -1 : 0));
+            if(signal_child){
+                int status; assert(waitpid(signal_child,&status,0)==signal_child);
+                assert(WIFEXITED(status) && WEXITSTATUS(status)==0);
+            }
+            assert(flushed==2 && !L);
+            assert(calls==(shutdown_mode==3 ? 1 : 0));
+            if(queued) close(client_fds[0]);
+        }
+    }
+    shutdown_mode=0;
+    puts("PASS: SIGTERM/SIGINT idle shutdown, in-flight completion, all cache slots, repeated signals, flush failures");
+}
+static void parent_death_test(void)
+{
+    int result_pipe[2]; assert(pipe(result_pipe)==0);
+    pid_t supervisor=fork(); assert(supervisor>=0);
+    if(supervisor==0){
+        close(result_pipe[0]);
+        int ready[2]; assert(pipe(ready)==0);
+        pid_t worker=fork(); assert(worker>=0);
+        if(worker==0){
+            close(ready[0]); parent_ready=ready[1]; parent_result=result_pipe[1];
+            shutdown_mode=6; fail_flush=flushed=0;
+            assert(prctl(PR_SET_PDEATHSIG,(long)SIGKILL,0L,0L,0L)==0);
+            int result=run_worker();
+            assert(write(parent_result,result==0 && flushed==2 ? "Y" : "N",1)==1);
+            close(parent_result); _exit(0);
+        }
+        close(ready[1]); close(result_pipe[1]);
+        char ready_byte; assert(read(ready[0],&ready_byte,1)==1 && ready_byte=='R');
+        close(ready[0]); _exit(0); /* Kernel now delivers the worker's parent-death signal. */
+    }
+    close(result_pipe[1]);
+    char result[3]; size_t used=0;
+    while(used<sizeof(result)){
+        struct pollfd event={.fd=result_pipe[0],.events=POLLIN};
+        assert(__real_poll(&event,1,5000)>0);
+        ssize_t n=read(result_pipe[0],result+used,sizeof(result)-used);
+        assert(n>0); used+=(size_t)n;
+    }
+    assert(memcmp(result,"FFY",3)==0);
+    close(result_pipe[0]);
+    int status; assert(waitpid(supervisor,&status,0)==supervisor);
+    assert(WIFEXITED(status) && WEXITSTATUS(status)==0);
+    puts("PASS: inherited SIGKILL parent-death policy replaced; parent exit flushes both caches");
+}
 int main(void)
 {
-    decode_tests(); worker_tests();
+    setbuf(stdout,NULL);
+    decode_tests(); worker_tests(); shutdown_tests(); parent_death_test();
     return 0;
 }

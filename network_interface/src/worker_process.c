@@ -4,6 +4,10 @@
 #include <signal.h>
 #include <errno.h>
 #include <poll.h>
+#include <fcntl.h>
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
 #include <stdarg.h>
 #include <sys/time.h>
 #include <string.h>
@@ -20,6 +24,14 @@
 #include "common.h"
 #include "lua_start.h"
 #include "string_utilities.h"
+
+static volatile sig_atomic_t shutdown_requested;
+
+static void request_shutdown(int signo)
+{
+    (void)signo;
+    shutdown_requested = 1;
+}
 
 static char prog[] = "worker_process";
 
@@ -69,7 +81,7 @@ generic:
 static ssize_t send_reply(int fd, const void *data, size_t size)
 {
     ssize_t n;
-    do { n=send(fd,data,size,MSG_NOSIGNAL); } while(n<0 && errno==EINTR);
+    do { n=send(fd,data,size,MSG_NOSIGNAL); } while(n<0 && errno==EINTR && !shutdown_requested);
     return n == (ssize_t)size ? n : -1;
 }
 
@@ -82,26 +94,47 @@ int work_process(int sock)
 	char buffer[EIGTH_Kib + 1] = {0};
 	char *d_buff = NULL;
 
-	/*start the Lua interpreter*/
-	if(init_lua(LUA_CONFIG_FILE) == -1){
-		/**/
-		return -1;
-	}
-	
+    struct sigaction action = {0}, old_term, old_int;
+    int listener_flags = fcntl(sock,F_GETFL);
+    if(listener_flags == -1) return -1;
+    shutdown_requested = 0;
+    action.sa_handler = request_shutdown;
+    action.sa_flags = SA_RESTART;
+    sigemptyset(&action.sa_mask);
+    if(sigaction(SIGTERM,&action,&old_term) == -1) return -1;
+    if(sigaction(SIGINT,&action,&old_int) == -1){
+        sigaction(SIGTERM,&old_term,NULL);
+        return -1;
+    }
+    int result = -1;
+#ifdef __linux__
+    /* Replace WSER's inherited SIGKILL before Lua/cache initialization. */
+    pid_t parent = getppid();
+    int old_parent_signal = 0;
+    if(prctl(PR_GET_PDEATHSIG,&old_parent_signal) == -1) goto restore_handlers;
+    if(prctl(PR_SET_PDEATHSIG,(long)SIGTERM,0L,0L,0L) == -1) goto restore_handlers;
+    if(parent == 1 || getppid() != parent) shutdown_requested = 1;
+#endif
+    if(fcntl(sock,F_SETFL,listener_flags | O_NONBLOCK) == -1) goto restore_parent;
+    if(shutdown_requested) { result = 0; goto restore_listener; }
+    if(init_lua(LUA_CONFIG_FILE) == -1) goto restore_listener;
 
-	for(;;){
-		/*accept connection*/
-		check_config_file();
+    while(!shutdown_requested){
+        check_config_file();
+        if(shutdown_requested) break;
+        /* Bounded poll avoids the signal-before-blocking race. Accept must
+         * also be nonblocking if a queued connection disappears. */
+        struct pollfd event = {.fd=sock, .events=POLLIN};
+        int ready = poll(&event,1,250);
+        if(shutdown_requested) break;
+        if(ready < 0){ if(errno == EINTR) continue; break; }
+        if(ready == 0) continue;
+        if(!(event.revents & POLLIN)) break;
         if((data_sock = accept(sock,NULL,NULL)) == -1){
-            if(errno == EINTR) continue;
-            if(errno == EAGAIN || errno == EWOULDBLOCK){
-                struct pollfd event = {.fd=sock, .events=POLLIN};
-                int result;
-                do { result=poll(&event,1,-1); } while(result<0 && errno==EINTR);
-                if(result>0 && (event.revents & POLLIN)) continue;
-            }
+            if(errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) continue;
             break;
         }
+        if(shutdown_requested){ close(data_sock); break; }
         /* One client must not indefinitely stall this single database worker. */
         struct timeval timeout = {.tv_sec=5};
         if(setsockopt(data_sock,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout)) ||
@@ -114,8 +147,9 @@ int work_process(int sock)
         memset(succ,0,sizeof(succ));
         memset(buffer,0,sizeof(buffer));
         ssize_t r;
-        do { r=recv(data_sock,buffer,EIGTH_Kib,MSG_TRUNC); } while(r<0 && errno==EINTR);
+        do { r=recv(data_sock,buffer,EIGTH_Kib,MSG_TRUNC); } while(r<0 && errno==EINTR && !shutdown_requested);
         if(r < 2 || r > EIGTH_Kib){ close(data_sock); continue; }
+        if(shutdown_requested){ close(data_sock); break; }
         buffer[r] = '\0';
         ui16 operation;
         memcpy(&operation,buffer,sizeof(operation));
@@ -727,6 +761,17 @@ s_ord_get_exit_error:
 			continue;
 		}
 	}
-	close_lua();
-	return -1; /* the owning WSER process decides its own shutdown policy */
+    result = shutdown_requested ? 0 : -1;
+    if(flush_lua_caches() == -1) result = -1;
+    close_lua();
+restore_listener:
+    if(fcntl(sock,F_SETFL,listener_flags) == -1) result = -1;
+restore_parent:
+#ifdef __linux__
+    if(prctl(PR_SET_PDEATHSIG,(long)old_parent_signal,0L,0L,0L) == -1) result = -1;
+#endif
+restore_handlers:
+    sigaction(SIGINT,&old_int,NULL);
+    sigaction(SIGTERM,&old_term,NULL);
+    return result; /* WSER owns the listener and the worker's final exit. */
 }

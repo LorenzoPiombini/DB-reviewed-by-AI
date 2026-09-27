@@ -38,12 +38,10 @@ WSER; this is not a TCP framing implementation.
 
 ## Remaining findings requiring storage/integration work
 
-1. **Forced termination can lose acknowledged writes.** This is a write-back
-   database. `close_lua()` does not flush caches, and SIGKILL cannot perform
-   cleanup. The prior WSER process-tree termination patch is therefore not a
-   database durability guarantee. A coordinated shutdown needs to stop accepting
-   new work, complete in-flight operations, flush/check storage in normal process
-   context, acknowledge completion, and only then exit the process tree.
+1. **SIGKILL still cannot flush.** The shutdown extension below handles
+   SIGTERM/SIGINT and Linux parent death, but direct SIGKILL or power loss can
+   still discard cached writes. A supervisor must allow the database worker
+   time to finish, and must not immediately follow SIGTERM with SIGKILL.
 2. **Flush is not crash-atomic.** `src/crud.c:write_cache_to_disk` writes the
    index, truncates the live data file, then writes cached data. An interruption
    can leave data/index state inconsistent. Schema persistence is still marked
@@ -89,3 +87,46 @@ not run in the review environment because it cannot inspect process tasks;
 `ASAN_OPTIONS=detect_leaks=0` was required there. Lua itself was an uninstrumented
 system runtime. No full deployed WSER/database, real persistence, power-loss,
 or macOS tests were performed.
+
+## Shutdown extension (after interface patch 3216cc5)
+
+`work_process` installs SIGTERM/SIGINT handlers before initializing Lua. The
+handler only sets a `sig_atomic_t` flag. The normal worker loop stops accepting
+new work, lets an already executing Lua call return, invokes
+`flush_lua_caches()`, then closes Lua. Every occupied slot is written through the
+existing `write_cache_to_disk()` routine, including slots whose `used` timestamp
+is zero. A failed flush is logged by file name; remaining slots are still
+attempted. The worker returns -1 on any flush failure, or 0 after a successful
+signal-requested shutdown. The owning WSER process must propagate failure;
+returning an error does not recover a failed disk write.
+
+The listener is temporarily nonblocking and polled at 250 ms intervals to avoid
+missing a termination request immediately before a blocking accept. Accepted
+client I/O retains its five-second timeouts. A nonreturning Lua function or
+blocked storage operation can still delay shutdown. Existing handlers and
+listener flags are restored on return.
+
+On Linux the database worker changes its inherited parent-death signal from
+SIGKILL to SIGTERM before Lua initialization and checks for parent disappearance
+during setup. This permits flushing when WSER's HTTP/TLS parent exits. Parent
+death before this setup may still invoke the previously inherited SIGKILL, but
+this worker has not yet initialized its Lua cache at that point. A restarted
+server must not start a second database writer against the same files until the
+old database worker has actually finished flushing.
+
+Use `kill -TERM <database-worker-pid>` (or ordinary `kill <pid>`). Ctrl-C sends
+SIGINT, which follows the same path. `kill -9` / `pkill -9` sends SIGKILL and
+cannot run cleanup. This extension makes no changes to either Makefile.
+
+Additional tests use real signal delivery during idle poll/client receive, a
+termination request during a Lua call, repeated signals during flushing, first
+and last cache slots, and an injected flush failure. A forked worker also
+inherits SIGKILL as its parent-death signal; its parent exits after worker
+initialization, and the test verifies two flush calls and successful return.
+Storage functions are substituted to verify ordering and error handling; the
+actual disk writer is not exercised by these shutdown tests. ASan/UBSan pass.
+
+This extension calls the existing disk writer unchanged: it does not add fsync,
+transactional file replacement, missing schema persistence, or rollback.
+Those storage limitations listed above remain. A successful shutdown flush is
+not a power-loss durability guarantee.
