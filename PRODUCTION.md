@@ -1,6 +1,6 @@
 # ERP production release gates
 
-Status: not cleared for production. This hardening pass fixes specific defects;
+Status: not cleared for production. See DURABILITY.md for the new worker journal. This hardening pass fixes specific defects;
 it does not certify the server or database. The intended users are employees
 of customer companies operating orders, customers, items, recipes and vendors.
 
@@ -21,10 +21,13 @@ of customer companies operating orders, customers, items, recipes and vendors.
   creation time. Checks/retries for inactive caches are limited to once a
   minute. A failed flush retains that cache and does not skip other files.
   Clock rollback starts a new flush interval. This is periodic writeback,
-  not a guarantee that an acknowledged operation is durable.
+  not by itself a guarantee that an acknowledged operation is durable. The newer
+  durable-worker commit path in DURABILITY.md now supplies that guarantee for
+  supported worker writes, subject to its filesystem and deployment assumptions.
 - Reload checks use the configuration path supplied to init_lua. Failed Lua
   loads no longer leave error objects accumulating on the stack. A runtime
   error can still partially change Lua globals: reload is not transactional.
+  The newer durable worker disables hot-reload; restart for configuration changes.
 
 The worker remains single and sequential. No additional worker, thread or
 parallel cache access was introduced. Neither project's Makefile was changed.
@@ -64,32 +67,29 @@ have not been validated by these Linux tests.
 
 ## Required before customer data
 
-1. **Crash-safe durable commits.** write_cache_to_disk truncates the live index
-   and data files separately; it does not fsync them or commit related files
-   atomically. Order rollback protects in-memory failures only. SIGKILL cannot
-   run a flush handler. Design a durable transaction log/checkpoint protocol
-   covering every write operation and all related files, with recovery before
-   serving requests. Verify kill/power-loss simulations and ENOSPC/fsync errors
-   at every commit boundary. Never acknowledge durable success before the
-   recovery record is durably committed. Merely adding fsync or independent
-   renames does not make a multi-file order atomic.
+1. **Crash-safe durable commits.** Implemented for the Linux worker's currently
+   supported write endpoints in DURABILITY.md: whole-cache redo snapshots,
+   fsynced publication/checkpoints, recovery before reads and acknowledgements
+   only after commit. Process-kill/replay and injected I/O error tests pass.
+   Staging verification on the deployed Fedora build/storage, realistic write
+   latency, and physical power-loss behavior remain deployment release gates.
+   Legacy CLI/direct-disk operations are outside this guarantee.
 2. **Employee identity and permissions.** WSER's current request/DB dispatch
    has no demonstrated login/session enforcement. Each request needs an
    authenticated employee, company membership and a permission for its action.
    An anonymous request must fail before reaching the worker. Orders, shipping,
    customer maintenance, recipes and vendor maintenance need explicit roles.
-3. **Company isolation.** Decide between one deployment/database per company
-   and a shared deployment. A shared deployment needs tenant-scoped keys,
-   indexes, reads, writes, reports, cache identity and backups. Never trust a
-   browser-supplied company ID or filename as authorization. Test cross-company
-   reads/writes and ID enumeration. The current fixed file configuration does
-   not implement this isolation for a shared multi-company ERP.
-4. **Deployment lifecycle.** Enforce exactly one writer over the database,
-   including during rapid restarts and CLI maintenance. Existing Unix socket
-   setup can unlink an old socket, so a pathname alone is not a singleton lock.
-   Run with a dedicated account and private DB/socket directories; remove the
-   hardcoded /root assumptions before deploying that way. Verify service stop,
-   restart, DB flush failures, port release and recovery on the actual host.
+3. **Company isolation.** The chosen model is one droplet and one database per
+   customer company. Keep deployment credentials, employee access and backups
+   separate for each company. This does not replace employee permissions within
+   an ERP instance. Shared multi-company database hosting is outside this design.
+4. **Deployment lifecycle.** Durable workers now hold an exclusive database-root
+   lock. Legacy CLI tools do not participate; keep them offline while the worker
+   runs. Wait for the old process tree to exit before restarting, since WSER's
+   Unix socket setup can unlink an existing socket. Run with a dedicated account
+   and private DB/socket directories; remove the hardcoded /root configuration
+   assumptions before deploying that way. Verify stop, restart, port release and
+   recovery with the actual deployed service and libraries.
 5. **Previously reported crash.** The Fedora ASan null-write trace attributed
    to worker_process/poll has not been explained. Local passing tests do not
    resolve that trace. Capture the faulting instruction/backtrace with the

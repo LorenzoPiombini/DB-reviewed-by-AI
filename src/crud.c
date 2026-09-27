@@ -1,3 +1,6 @@
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -20,6 +23,8 @@
 #include "input.h"
 #include "string_utilities.h"
 #include "common.h"
+#include "durable.h"
+#include "durable.inc"
 
 static char *prog = "db";
 static file_offset get_rec_position(struct HashTable *ht, void *key, int key_type);
@@ -1128,6 +1133,10 @@ int set_tbl(struct HashTable *ht, void *key, file_offset offset, int key_type,in
    */
 
 int write_cache_to_disk(struct Cache *c){
+    if(db_durable_active()){
+        if(db_durable_in_request()) return -1;
+        return db_durable_commit(c,1);
+    }
 	file_t fds[3];
 	memset(fds,-1,3*sizeof(int));
 	char file_names[3][MAX_FILE_PATH_LENGTH];

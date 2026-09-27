@@ -16,6 +16,7 @@
 
 /*my libs*/
 #include <crud.h>
+#include "durable.h"
 #include <key.h>
 #include <str_op.h>
 #include <types.h>
@@ -26,6 +27,8 @@
 #include "string_utilities.h"
 
 static volatile sig_atomic_t shutdown_requested;
+static int mutation_reply, storage_failed;
+
 
 static void request_shutdown(int signo)
 {
@@ -82,6 +85,22 @@ generic:
 static ssize_t send_reply(int fd, const void *data, size_t size)
 {
     ssize_t n;
+    short code;
+    short failed=GENERAL_ERROR;
+    if(mutation_reply){
+        mutation_reply=0;
+        memcpy(&code,data,sizeof(code));
+        if(code==0){
+            if(commit_lua_caches()<0){
+                fprintf(stderr,"database: durable commit failed; stopping worker, retain journal for recovery\n");
+                storage_failed=1; shutdown_requested=1;
+                data=&failed; size=sizeof(failed);
+            }
+        } else if(discard_lua_caches()<0){
+            storage_failed=1; shutdown_requested=1;
+        }
+        db_durable_request(0);
+    }
     do { n=send(fd,data,size,MSG_NOSIGNAL); } while(n<0 && errno==EINTR && !shutdown_requested);
     return n == (ssize_t)size ? n : -1;
 }
@@ -99,6 +118,7 @@ int work_process(int sock)
     int listener_flags = fcntl(sock,F_GETFL);
     if(listener_flags == -1) return -1;
     shutdown_requested = 0;
+    mutation_reply=storage_failed=0;
     action.sa_handler = request_shutdown;
     action.sa_flags = SA_RESTART;
     sigemptyset(&action.sa_mask);
@@ -118,10 +138,11 @@ int work_process(int sock)
 #endif
     if(fcntl(sock,F_SETFL,listener_flags | O_NONBLOCK) == -1) goto restore_parent;
     if(shutdown_requested) { result = 0; goto restore_listener; }
-    if(init_lua(LUA_CONFIG_FILE) == -1) goto restore_listener;
+    if(init_durable_lua(LUA_CONFIG_FILE) == -1) goto restore_listener;
 
     while(!shutdown_requested){
         check_config_file();
+        if(db_durable_failed()){ storage_failed=1; shutdown_requested=1; }
         if(shutdown_requested) break;
         /* Bounded poll avoids the signal-before-blocking race. Accept must
          * also be nonblocking if a queued connection disappears. */
@@ -165,6 +186,10 @@ int work_process(int sock)
             }
         }
 
+        if(operation==NEW_CUST || operation==N_ITEM || operation==NEW_SORD){
+            mutation_reply=1;
+            db_durable_request(1);
+        }
 		switch(operation_to_perform){
 		case NEW_CUST:
 		{
@@ -764,7 +789,8 @@ s_ord_get_exit_error:
 		}
 	}
     result = shutdown_requested ? 0 : -1;
-    if(flush_lua_caches() == -1) result = -1;
+    if(storage_failed || db_durable_failed()) result=-1;
+    else if(flush_lua_caches() == -1) result = -1;
     close_lua();
 restore_listener:
     if(fcntl(sock,F_SETFL,listener_flags) == -1) result = -1;

@@ -22,6 +22,7 @@
 static struct Cache test_cache[30];
 static HashTable test_index;
 static int shutdown_mode, in_operation, flushed, fail_flush;
+static int durable_commits, durable_discards, fail_commit;
 static pid_t signal_child;
 static int parent_ready=-1, parent_result=-1;
 static void send_termination_later(void)
@@ -249,6 +250,7 @@ static void worker_tests(void)
     int overflow=request(CUSTOMER_GET,"4294967296");
     int key=request(CUSTOMER_GET,"4294967295");
     assert(run_worker()==-1);
+    assert(durable_commits==4 && durable_discards==3);
     assert(L==NULL && calls==111); /* 7 writes, 2 reports, 101 lists, 1 key */
     error_reply(short_packet); error_reply(short_length); error_reply(update);
     char b[72000];
@@ -340,10 +342,22 @@ static void parent_death_test(void)
     assert(WIFEXITED(status) && WEXITSTATUS(status)==0);
     puts("PASS: inherited SIGKILL parent-death policy replaced; parent exit flushes both caches");
 }
+static void durable_reply_test(void)
+{
+    calls=accepted=queued=0; shutdown_mode=0; fail_commit=1;
+    durable_commits=durable_discards=0;
+    int customer=write_request(NEW_CUST);
+    assert(run_worker()==-1 && L==NULL);
+    assert(durable_commits==1 && durable_discards==0 && calls==1);
+    error_reply(customer);
+    close(client_fds[customer]);
+    fail_commit=0;
+    puts("PASS: success waits for commit; failed commit sends no success and stops worker");
+}
 int main(void)
 {
     setbuf(stdout,NULL);
-    decode_tests(); worker_tests(); shutdown_tests(); parent_death_test();
+    decode_tests(); worker_tests(); shutdown_tests(); parent_death_test(); durable_reply_test();
     L=luaL_newstate(); assert(L); luaL_openlibs(L);
     assert(luaL_dostring(L,"package.preload.db=function() return {} end")==LUA_OK);
     assert(luaL_dofile(L,"network_interface/lua/db_config.lua")==LUA_OK);
@@ -351,3 +365,18 @@ int main(void)
     close_lua();
     return 0;
 }
+
+/* Worker acknowledgement ordering is checked separately from disk recovery. */
+int __wrap_init_durable_lua(char *path) { return __wrap_init_lua(path); }
+int __wrap_commit_lua_caches(void)
+{
+    ++durable_commits;
+    assert(!in_operation);
+    if(accepted && client_fds[accepted-1]>=0){
+        char byte;
+        assert(recv(client_fds[accepted-1],&byte,1,MSG_PEEK|MSG_DONTWAIT)==-1);
+        assert(errno==EAGAIN || errno==EWOULDBLOCK); /* Not acknowledged yet. */
+    }
+    return fail_commit ? -1 : 0;
+}
+int __wrap_discard_lua_caches(void) { ++durable_discards; return 0; }

@@ -26,6 +26,9 @@ extern HashTable *cache_r_ptr;
 
 
 int init_lua(char *config_file);
+int init_durable_lua(char *config_file);
+int commit_lua_caches(void);
+int discard_lua_caches(void);
 void clear_lua_stack();
 int execute_lua_script(char *buf);
 int execute_lua_function(char *func_name, char *func_sig,...);

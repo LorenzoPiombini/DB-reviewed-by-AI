@@ -7334,6 +7334,7 @@ void close_ram_file(struct Ram_file *ram)
 {
 	if(ram->mem)
 		free(ram->mem);
+    ram->mem = NULL;
 	ram->size = 0;
 	ram->capacity = 0;
 }

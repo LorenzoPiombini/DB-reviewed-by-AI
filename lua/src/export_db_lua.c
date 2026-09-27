@@ -10,6 +10,7 @@
 #include "date.h"
 #include "hash_tbl.h"
 #include "key.h"
+#include "durable.h"
 
 #define LOWER_STR(s) for(char *p = &s[0]; *p && ((int)*p >= 65 || (int)*p <= 90) ;*p = ((int)*p) + 22,p++)
 #define UPPER_STR(s) for(char *p = &s[0]; *p && ((int)*p >= 97 || (int)*p <= 122) ;(int)*p -= 22,p++)
@@ -430,6 +431,8 @@ err_not_db_file:
  * */
 static int l_write_record(lua_State *L)
 {
+    if(db_durable_active() && !db_durable_in_request())
+        return luaL_error(L,"writes require a durable worker request");
 	char *file_name = (char*)luaL_checkstring(L,1);
     if(!order_tx_file_allowed(file_name)) return luaL_error(L,"file outside order transaction");
 	luaL_argcheck(L, file_name != NULL, 1,"file_name expected");
@@ -595,6 +598,12 @@ use_cache:
 	return 2;/*return the key and the record*/
 
 err_cache:
+    if(db_durable_active()){
+        close_file(3,fds[0],fds[1],fds[2]);
+        free_schema(hd.sch_d);
+        lua_pushnil(L); lua_pushstring(L,"cache unavailable; disk fallback disabled");
+        return 2;
+    }
 	if(!IS_FILE_T_VALID(fds[0])){
 		if(open_files(file_name,fds,file_names,-1) == -1) 
 			goto err_open_file;
@@ -718,6 +727,8 @@ err_invalid_data:
 
 static int l_update_record(lua_State *L)
 {
+    if(db_durable_active() && !db_durable_in_request())
+        return luaL_error(L,"writes require a durable worker request");
     if(order_tx_active) return luaL_error(L,"only append writes are allowed in an order transaction");
 	char *file_name = (char*)luaL_checkstring(L,1);
     if(!order_tx_file_allowed(file_name)) return luaL_error(L,"file outside order transaction");
@@ -975,6 +986,7 @@ err_invalid_data:
  * */
 static int l_delete_record(lua_State *L)
 {
+    if(db_durable_active()) return luaL_error(L,"direct-disk operation unavailable in durable worker");
     if(order_tx_active) return luaL_error(L,"only append writes are allowed in an order transaction");
 	char *file_name = (char*)luaL_checkstring(L,1);
     if(!order_tx_file_allowed(file_name)) return luaL_error(L,"file outside order transaction");
@@ -1083,6 +1095,7 @@ err_write_index:
  * */
 static int l_create_record(lua_State *L)
 {
+    if(db_durable_active()) return luaL_error(L,"direct-disk operation unavailable in durable worker");
     if(order_tx_active) return luaL_error(L,"only append writes are allowed in an order transaction");
 	char *file_name = (char*)luaL_checkstring(L,1);
     if(!order_tx_file_allowed(file_name)) return luaL_error(L,"file outside order transaction");
@@ -1585,6 +1598,8 @@ error_key_null_from_cache:
 
 static int l_save_key_at_index(lua_State *L)
 {
+    if(db_durable_active() && !db_durable_in_request())
+        return luaL_error(L,"writes require a durable worker request");
     if(order_tx_active) return luaL_error(L,"only append writes are allowed in an order transaction");
 	char *file_name = (char*)luaL_checkstring(L,1);
     if(!order_tx_file_allowed(file_name)) return luaL_error(L,"file outside order transaction");
@@ -1618,7 +1633,7 @@ static int l_save_key_at_index(lua_State *L)
 	int index = (int)luaL_checkinteger(L,3);
 	luaL_argcheck(L, index >= 0, 3,"index cannot be negative");
 
-	long long record_offset = (int)luaL_checkinteger(L,4);
+	long long record_offset = luaL_checkinteger(L,4);
 	luaL_argcheck(L, record_offset >= 0, 4,"offset cannot be negative");
 
 	file_t fds[3];
@@ -1659,6 +1674,7 @@ use_cache:
 		p = &dbCache[first_free_cache];
 	}
 	
+    if(index >= p->indexes) return luaL_error(L,"index out of range");
 	if(set_tbl(p->index_file,key,record_offset,key_type,index) == -1) goto err_set_index_cache;
 	p->used = now_seconds();
 	lua_pushinteger(L,index);
@@ -1694,6 +1710,12 @@ indexing_test:
 	return 2;
 
 err_cache:
+    if(db_durable_active()){
+        close_file(3,fds[0],fds[1],fds[2]);
+        free_schema(hd.sch_d);
+        lua_pushnil(L); lua_pushstring(L,"cache unavailable; disk fallback disabled");
+        return 2;
+    }
 	if(fds[0] == -1){
 		if(open_files(file_name,fds,file_names,-1) == -1) goto err_open_file;
 		if(is_db_file(&hd,fds) == -1) goto err_not_db_file;
@@ -2072,7 +2094,7 @@ static int get_free_slot_cache(struct Cache *c)
 
 static int check_and_free_one_cache(struct Cache *c)
 {
-    if(order_tx_active) return -1; /* pinned until commit/rollback */
+    if(order_tx_active || db_durable_in_request()) return -1; /* pinned until commit/rollback */
 	int i;
 	for(i = 0; i < (int)CACHE_SIZE; i++){
         time_t last_used = c[i].used ? c[i].used : c[i].ts;
@@ -2215,7 +2237,7 @@ failed:
 
 static int is_test(lua_State *L)
 {
-    if(order_tx_active) return 0; /* never bypass cache for a staged write */
+    if(order_tx_active || db_durable_active()) return 0; /* never bypass the journal */
 	lua_getglobal(L,"TEST");
 	int b = lua_toboolean(L,-1);
 	if(b){

@@ -15,9 +15,9 @@ trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 ${CC:-cc} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -std=gnu11 -g -O1 -Wall -Wextra \
     ${SANITIZERS:--fsanitize=address,undefined} -fno-omit-frame-pointer \
     $LUA_CFLAGS -Iinclude -Inetwork_interface/include -I"$WSER_INCLUDE" \
-    network_interface/tests/interface_test.c \
+    network_interface/tests/interface_test.c network_interface/tests/durable_stubs.c \
     network_interface/src/lua_start.c network_interface/src/worker_process.c \
-    -Wl,--wrap=poll,--wrap=accept,--wrap=init_lua,--wrap=check_config_file \
+    -Wl,--wrap=poll,--wrap=accept,--wrap=init_lua,--wrap=check_config_file,--wrap=init_durable_lua,--wrap=commit_lua_caches,--wrap=discard_lua_caches \
     $LUA_LIBS -o "$build_dir/interface_test"
 "$build_dir/interface_test"
 
@@ -25,14 +25,14 @@ ${CC:-cc} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -std=gnu11 -g -O1 -Wall -Wextra 
 ${CC:-gcc} --param asan-globals=0 -std=gnu11 -g -O1 -ffunction-sections -fdata-sections \
     ${SANITIZERS:--fsanitize=address,undefined} -fno-omit-frame-pointer \
     $LUA_CFLAGS -Iinclude -Ilua/include \
-    network_interface/tests/cache_eviction_test.c -Wl,--gc-sections \
+    network_interface/tests/cache_eviction_test.c network_interface/tests/durable_stubs.c -Wl,--gc-sections \
     $LUA_LIBS -o "$build_dir/cache_eviction_test"
 "$build_dir/cache_eviction_test"
 
 ${CC:-gcc} --param asan-globals=0 -std=gnu11 -g -O1 -ffunction-sections -fdata-sections \
     ${SANITIZERS:--fsanitize=address,undefined} -fno-omit-frame-pointer \
     $LUA_CFLAGS -Iinclude -Ilua/include \
-    network_interface/tests/order_transaction_test.c -Wl,--gc-sections \
+    network_interface/tests/order_transaction_test.c network_interface/tests/durable_stubs.c -Wl,--gc-sections \
     $LUA_LIBS -o "$build_dir/order_transaction_test"
 "$build_dir/order_transaction_test"
 
@@ -45,6 +45,6 @@ ${CC:-cc} -std=gnu11 -g -O1 -ffunction-sections -fdata-sections \
 ${CC:-cc} -std=gnu11 -g -O1 -ffunction-sections -fdata-sections \
     ${SANITIZERS:--fsanitize=address,undefined} -fno-omit-frame-pointer \
     $LUA_CFLAGS -Iinclude -Inetwork_interface/include -I"$WSER_INCLUDE" \
-    network_interface/tests/cache_maintenance_test.c -Wl,--gc-sections \
+    network_interface/tests/cache_maintenance_test.c network_interface/tests/durable_stubs.c -Wl,--gc-sections \
     $LUA_LIBS -o "$build_dir/cache_maintenance_test"
 "$build_dir/cache_maintenance_test"

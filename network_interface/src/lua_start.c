@@ -10,6 +10,7 @@
 #include "record.h"
 #include "file.h"
 #include "crud.h"
+#include "durable.h"
 #include "date.h"
 #include "lua_start.h"
 #include "json.h"
@@ -66,10 +67,48 @@ failed:
 	return -1;
 }
 
+/* Recover before Lua can load any records. The default matches db_config.lua. */
+int init_durable_lua(char *config_file)
+{
+    const char *directory=getenv("WSER_DB_DIRECTORY");
+    if(!directory) directory="/root/db";
+    if(db_durable_open(directory)<0){
+        fprintf(stderr,"database: cannot lock/recover durable store in %s\n",directory);
+        return -1;
+    }
+    if(init_lua(config_file)<0){ db_durable_close(); return -1; }
+    return 0;
+}
+
+int commit_lua_caches(void)
+{
+    if(!db_durable_active() || !dbcache_ptr) return -1;
+    return db_durable_commit(dbcache_ptr,CACHE_SIZE);
+}
+
+/* All successful worker mutations are already checkpointed. Discarding caches
+ * therefore rolls an unsuccessful request back to the last durable state. */
+int discard_lua_caches(void)
+{
+    int i;
+    if(!dbcache_ptr || !cache_r_ptr) return -1;
+    for(i=0;i<CACHE_SIZE;++i){
+        struct Cache *c=&dbcache_ptr[i];
+        Node *entry;
+        if(!c->index_file || !c->file_name) continue;
+        entry=ht_delete(c->file_name,cache_r_ptr,STR);
+        if(!entry) return -1;
+        free_ht_node(entry);
+        free_cache(c);
+    }
+    return 0;
+}
+
 /* Call only from normal execution, never from a signal handler. */
 int flush_lua_caches(void)
 {
     int result = 0;
+    if(db_durable_active()) return commit_lua_caches();
     if(!dbcache_ptr) return 0;
     for(int i = 0; i < CACHE_SIZE; ++i){
         struct Cache *cache = &dbcache_ptr[i];
@@ -95,13 +134,16 @@ void close_lua()
     sec=0;
     last_cache_flush=0;
     last_cache_check=0;
+    db_durable_close();
 }
 
 void check_config_file()
 {
     /* Maintenance must run even when the configuration was moved/deleted. */
     if(dbcache_ptr) free_inactive_caches(dbcache_ptr);
-    if(!L || !loaded_config_file) return;
+    /* Executable Lua configuration must not mutate records outside a request.
+     * Restart the durable worker to deploy configuration changes. */
+    if(db_durable_active() || !L || !loaded_config_file) return;
     struct stat file_data;
     if(stat(loaded_config_file,&file_data) == -1) return;
     if(file_data.st_mtime != sec){
