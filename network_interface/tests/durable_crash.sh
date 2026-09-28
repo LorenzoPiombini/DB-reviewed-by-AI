@@ -19,7 +19,7 @@ ${CC:-cc} -std=gnu11 -g -O1 -fno-omit-frame-pointer \
     -DDB_DURABILITY_TEST_HOOK -Wl,--wrap=write,--wrap=fsync,--wrap=luaL_newstate \
     $LUA_CFLAGS -Iinclude -Ilua/include -Inetwork_interface/include -I"$WSER_INCLUDE" \
     network_interface/tests/durable_crash_test.c lua/src/export_db_lua.c network_interface/src/lua_start.c \
-    src/crud.c src/file.c "$build_dir/date.o" src/hash_tbl.c src/debug.c src/common.c \
+    src/crud.c src/durable.c src/file.c "$build_dir/date.o" src/hash_tbl.c src/debug.c src/common.c \
     src/string_utilities.c src/str_op.c src/lock.c src/record.c src/endian.c \
     src/parse.c src/globals.c src/sort.c src/input.c src/key.c \
     $LUA_LIBS -lm -o "$build_dir/durable_crash_test"

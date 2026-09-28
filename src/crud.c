@@ -1,6 +1,3 @@
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE
-#endif
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -24,7 +21,18 @@
 #include "string_utilities.h"
 #include "common.h"
 #include "durable.h"
-#include "durable.inc"
+
+/* Keep the worker-facing API in libcrud; storage internals live in durable.c. */
+int db_durable_open(const char *directory) { return durable_open(directory); }
+void db_durable_close(void) { durable_close(); }
+int db_durable_active(void) { return durable_active(); }
+int db_durable_failed(void) { return durable_failed(); }
+void db_durable_request(int active) { durable_request(active); }
+int db_durable_in_request(void) { return durable_in_request(); }
+int db_durable_commit(struct Cache *caches, int count)
+{
+    return durable_commit(caches,count);
+}
 
 static char *prog = "db";
 static file_offset get_rec_position(struct HashTable *ht, void *key, int key_type);

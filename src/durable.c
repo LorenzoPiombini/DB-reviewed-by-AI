@@ -1,4 +1,18 @@
-/* Included by crud.c so existing Makefiles/link targets remain unchanged.
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#ifdef __linux__
+#include <unistd.h>
+#endif
+#include "crud.h"
+#include "parse.h"
+#include "durable.h"
+
+/* Compiled separately and linked into libcrud.
  * Whole-cache redo snapshots: publish once, replay until checkpoint completes.
  * Private directory + lifetime flock; no CLI/other writer may bypass this lock.
  */
@@ -8,7 +22,6 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <stdint.h>
-#include "durable.h"
 #define D_MAX 90
 static int d_rootfd=-1, d_dirfd=-1, d_lockfd=-1, d_failed, d_request;
 static char d_root[PATH_MAX];
@@ -171,21 +184,21 @@ end:
     free(entries);
     return result;
 }
-int db_durable_active(void) { return d_lockfd>=0; }
-int db_durable_failed(void) { return d_failed; }
-void db_durable_request(int active) { d_request=active; }
-int db_durable_in_request(void) { return d_request; }
-void db_durable_close(void)
+int durable_active(void) { return d_lockfd>=0; }
+int durable_failed(void) { return d_failed; }
+void durable_request(int active) { d_request=active; }
+int durable_in_request(void) { return d_request; }
+void durable_close(void)
 {
     if(d_lockfd>=0) close(d_lockfd);
     if(d_dirfd>=0) close(d_dirfd);
     if(d_rootfd>=0) close(d_rootfd);
     d_lockfd=d_dirfd=d_rootfd=-1; d_request=0;
 }
-int db_durable_open(const char *directory)
+int durable_open(const char *directory)
 {
     struct stat st;
-    if(db_durable_active()){ errno=EBUSY; return -1; }
+    if(durable_active()){ errno=EBUSY; return -1; }
     d_failed=0;
     if(!directory || !realpath(directory,d_root) || !strcmp(d_root,"/")) return -1;
     d_rootfd=open(d_root,O_RDONLY|O_DIRECTORY|O_CLOEXEC|O_NOFOLLOW);
@@ -201,10 +214,10 @@ int db_durable_open(const char *directory)
     return 0;
 failed:
     d_failed=1;
-    db_durable_close();
+    durable_close();
     return -1;
 }
-int db_durable_commit(struct Cache *caches, int count)
+int durable_commit(struct Cache *caches, int count)
 {
     int dir=-1, manifest=-1, fd=-1, i,j,k,n=0,result=-1;
     char file[32], raw[PATH_MAX], resolved[PATH_MAX];
@@ -212,7 +225,7 @@ int db_durable_commit(struct Cache *caches, int count)
     uint64_t value,size; uint32_t crc;
     struct Header_d header;
     struct d_entry *seen=NULL;
-    if(!db_durable_active() || d_failed || count<0 || count>D_MAX/3) return -1;
+    if(!durable_active() || d_failed || count<0 || count>D_MAX/3) return -1;
     for(i=0;i<count;++i) if(caches[i].index_file && caches[i].file_name) n+=3;
     if(!n) return 0;
     seen=calloc((size_t)n,sizeof(*seen));
@@ -274,12 +287,11 @@ end:
     return result;
 }
 #else
-#include "durable.h"
-int db_durable_open(const char *d) { (void)d; return -1; }
-void db_durable_close(void) {}
-int db_durable_active(void) { return 0; }
-int db_durable_failed(void) { return 1; }
-void db_durable_request(int a) { (void)a; }
-int db_durable_in_request(void) { return 0; }
-int db_durable_commit(struct Cache *c,int n) { (void)c;(void)n;return -1; }
+int durable_open(const char *d) { (void)d; return -1; }
+void durable_close(void) {}
+int durable_active(void) { return 0; }
+int durable_failed(void) { return 1; }
+void durable_request(int a) { (void)a; }
+int durable_in_request(void) { return 0; }
+int durable_commit(struct Cache *c,int n) { (void)c;(void)n;return -1; }
 #endif

@@ -16,7 +16,7 @@ OBJlibp = obj/debug.o  obj/sort.o obj/parse.o
 OBJlibpPR = obj/debug_prod.o  obj/sort_prod.o obj/parse_prod.o
 OBJlibl = obj/debug.o  obj/lock.o
 OBJliblPR = obj/debug_prod.o  obj/lock_prod.o
-OBJlibcrud = obj/crud.o obj/file.o obj/date.o obj/hash_tbl.o obj/debug.o obj/common.o obj/string_utilities.o obj/str_op.o obj/lock.o obj/record.o obj/endian.o obj/parse.o obj/globals.o obj/sort.o obj/input.o obj/key.o
+OBJlibcrud = obj/crud.o obj/durable.o obj/file.o obj/date.o obj/hash_tbl.o obj/debug.o obj/common.o obj/string_utilities.o obj/str_op.o obj/lock.o obj/record.o obj/endian.o obj/parse.o obj/globals.o obj/sort.o obj/input.o obj/key.o
 
 OBJlibexpl = obj/export_db_lua.o 
 OBJlibexplPR = obj/export_db_lua_prod.o 

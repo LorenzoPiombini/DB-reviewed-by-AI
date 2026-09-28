@@ -60,7 +60,9 @@ This patch builds on the previously supplied production-hardening patch
 2. Apply this patch in DB-reviewed-by-AI and rebuild/reinstall libcrud, the Lua
    db module, libworker, and the updated worker headers together using your
    existing build workflow. Ensure the dynamic linker loads the matching new
-   copies; mixed old/new libraries are unsupported. Both Makefiles are intact.
+   copies; mixed old/new libraries are unsupported. The DB Makefile adds
+   obj/durable.o to libcrud; other build settings are unchanged.
+   durable.c is compiled separately, with the worker API exposed through crud.h.
 3. The default database directory is /root/db, matching the current Lua config.
    To use another directory, set WSER_DB_DIRECTORY in the worker's environment
    and adjust db_config.lua's table paths to that same database tree. The root
