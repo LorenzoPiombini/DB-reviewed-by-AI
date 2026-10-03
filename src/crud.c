@@ -22,6 +22,20 @@
 #include "common.h"
 #include "allocator.h"
 
+#include "durable.h"
+
+/* Keep the worker-facing API in libcrud; storage internals live in durable.c. */
+int db_durable_open(const char *directory) { return durable_open(directory); }
+void db_durable_close(void) { durable_close(); }
+int db_durable_active(void) { return durable_active(); }
+int db_durable_failed(void) { return durable_failed(); }
+void db_durable_request(int active) { durable_request(active); }
+int db_durable_in_request(void) { return durable_in_request(); }
+int db_durable_commit(struct Cache *caches, int count)
+{
+    return durable_commit(caches,count);
+}
+
 static char *prog = "db";
 static file_offset get_rec_position(struct HashTable *ht, void *key, int key_type);
 
@@ -158,7 +172,7 @@ int get_all_records(char *file_name,file_t *fds,struct Record_f ***recs,struct H
 	
 	*all_size = (ram.size/sizeof(struct Record_f*)) +1;
 	*recs = (struct Record_f**)A_Malloc(sizeof(struct Record_f*)*(*all_size),M_STATIC,NULL);
-	if(!recs){ 
+	if(!*recs){
 		fprintf(stderr,"A_Malloc() failed, %s:%d.\n",__FILE__,__LINE__-2);
 		clear_ram_file(&ram);
 		return STATUS_ERROR;
@@ -168,6 +182,7 @@ int get_all_records(char *file_name,file_t *fds,struct Record_f ***recs,struct H
 	do{
 		file_offset pos_after_read = 0;
 		struct Record_f* rec = (struct Record_f*)A_Malloc(sizeof(struct Record_f),M_STATIC,NULL);
+		if(!rec){ clear_ram_file(&ram); return STATUS_ERROR; }
 		memset(rec,0,sizeof(struct Record_f));
 
 		if(( pos_after_read = read_ram_file(file_name,&ram, rec,*(hd.sch_d))) == -1){
@@ -1124,6 +1139,10 @@ int set_tbl(struct HashTable *ht, void *key, file_offset offset, int key_type,in
    */
 
 int write_cache_to_disk(struct Cache *c){
+    if(db_durable_active()){
+        if(db_durable_in_request()) return -1;
+        return db_durable_commit(c,1);
+    }
 	file_t fds[3];
 	memset(fds,-1,3*sizeof(int));
 	char file_names[3][MAX_FILE_PATH_LENGTH];

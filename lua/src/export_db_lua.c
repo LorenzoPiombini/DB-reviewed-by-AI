@@ -1,3 +1,4 @@
+#include "allocator.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -380,7 +381,7 @@ static int l_get_all_records(lua_State *L)
 		lua_rawseti(L, -2, i + 1);
 	}
 	
-	free(recs);
+	A_free(recs);
 	free_schema(hd.sch_d);
 	return 1;
 
@@ -831,13 +832,13 @@ use_cache:
 	
 	
 	while((pos = read_update_offset_ram_file(&p->data_file)) != 0){
-		struct Record_f *n = malloc(sizeof *n);
+		struct Record_f *n = A_alloc(sizeof *n);
 		if(!n) goto err_memory_allocation_update;
 		memset(n,0,sizeof *n);
 
 		p->data_file.offset =pos;
 		if(read_ram_file(file_name, &p->data_file, n, p->sch) == -1){ 
-			free(n);
+			A_free(n);
 			goto err_read_ram_file;
 		}
 		temp->next = n;
@@ -1204,7 +1205,7 @@ static int l_string_data_to_add_template(lua_State *L)
 	}
 	
 	int colon_nr = (i * 2 ) - 1;
-	char *st = (char*)malloc(colon_nr+sum+1);
+	char *st = (char*)A_alloc(colon_nr+sum+1);
 	if(!st) 
 		goto err_ask_mem;
 
@@ -1267,7 +1268,7 @@ static int l_string_data_to_add_template(lua_State *L)
 	lua_pushstring(L,st);
 	free_schema(hd.sch_d);
 	close_file(1,fds[2]);
-	free(st);
+	A_free(st);
 
 	return 1;
 
@@ -1282,9 +1283,9 @@ err_not_db_file:
 	return 2;
 err_ask_mem:
 	lua_pushnil(L);
-	lua_pushstring(L,"malloc() failed");
+	lua_pushstring(L,"A_alloc() failed");
 	close_file(1,fds[2]);
-	free(st);
+	A_free(st);
 	free_schema(hd.sch_d);
 	return 2;
 }
@@ -1549,7 +1550,7 @@ use_cache:
 		goto error_key_null_from_cache;
 
 	lua_pushstring(L,r);
-	free(r);
+	A_free(r);
 	return 1;
 get_all_keys_test:
 
@@ -1564,7 +1565,7 @@ get_all_keys_test:
 
 	lua_pushstring(L,res);
 	close_file(1,fds[0]);
-	free(res);
+	A_free(res);
 	return 1;
 
 err_cache:
@@ -1575,7 +1576,7 @@ err_cache:
 	lua_pushstring(L,res);
 	lua_pushinteger(L,(lua_Integer)-CACHE_FAILED);
 	close_file(3,fds[0],fds[1],fds[2]);
-	free(res);
+	A_free(res);
 	return 2;
 err_open_file:
 	lua_pushstring(L,"cannot open the file.");
@@ -2048,7 +2049,7 @@ int port_table_to_record(lua_State *L,int index, struct Record_f *rec,struct Sch
 			}
 
 			size_t sz = strlen(s);
-			rec->fields[i].data.s = (char *)malloc(sz+1);
+			rec->fields[i].data.s = (char *)A_alloc(sz+1);
 			if(!rec->fields[i].data.s){
 				return -1;
 			}
@@ -2128,14 +2129,14 @@ static void order_tx_free(struct Cache *cache)
                 Node *node=cache->index_file[i].data_map[b];
                 while(node){
                     Node *next=node->next;
-                    if(node->key.type==STR) free(node->key.k.s);
-                    free(node); node=next;
+                    if(node->key.type==STR) A_free(node->key.k.s);
+                    A_free(node); node=next;
                 }
             }
         }
-        free(cache->index_file);
+        A_free(cache->index_file);
     }
-    free(cache->data_file.mem);
+    A_free(cache->data_file.mem);
     cache->index_file=NULL;
     cache->data_file.mem=NULL;
 }
@@ -2146,7 +2147,7 @@ static int order_tx_clone(const struct Cache *src, struct Cache *dst)
     dst->index_file=NULL; dst->data_file.mem=NULL;
     if(src->indexes<=0 || !src->index_file || src->data_file.size>src->data_file.capacity ||
        (src->data_file.size && !src->data_file.mem)) return -1;
-    dst->index_file=calloc((size_t)src->indexes,sizeof(HashTable));
+    dst->index_file=A_calloc((size_t)src->indexes,sizeof(HashTable));
     if(!dst->index_file) return -1;
     for(int i=0;i<src->indexes;++i){
         const HashTable *from=&src->index_file[i];
@@ -2156,12 +2157,12 @@ static int order_tx_clone(const struct Cache *src, struct Cache *dst)
         for(int b=0;b<MAX_HT_BUCKET;++b){
             Node **tail=&to->data_map[b];
             for(const Node *node=from->data_map[b];node;node=node->next){
-                Node *copy=malloc(sizeof(*copy));
+                Node *copy=A_alloc(sizeof(*copy));
                 if(!copy) goto failed;
                 *copy=*node; copy->next=NULL;
                 if(copy->key.type==STR){
-                    copy->key.k.s=strdup(node->key.k.s);
-                    if(!copy->key.k.s){ free(copy); goto failed; }
+                    copy->key.k.s=A_strdup(node->key.k.s);
+                    if(!copy->key.k.s){ A_free(copy); goto failed; }
                 }
                 *tail=copy; tail=&copy->next;
             }
@@ -2169,7 +2170,7 @@ static int order_tx_clone(const struct Cache *src, struct Cache *dst)
     }
     if(src->data_file.capacity){
         if(src->data_file.capacity>SIZE_MAX) goto failed;
-        dst->data_file.mem=malloc((size_t)src->data_file.capacity);
+        dst->data_file.mem=A_alloc((size_t)src->data_file.capacity);
         if(!dst->data_file.mem) goto failed;
         if(src->data_file.size) memcpy(dst->data_file.mem,src->data_file.mem,(size_t)src->data_file.size);
     }

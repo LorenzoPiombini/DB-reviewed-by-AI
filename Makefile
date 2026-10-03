@@ -16,7 +16,8 @@ OBJlibp = obj/debug.o  obj/sort.o obj/parse.o
 OBJlibpPR = obj/debug_prod.o  obj/sort_prod.o obj/parse_prod.o
 OBJlibl = obj/debug.o  obj/lock.o
 OBJliblPR = obj/debug_prod.o  obj/lock_prod.o
-OBJlibcrud = obj/crud.o obj/durable.o obj/file.o obj/date.o obj/hash_tbl.o obj/debug.o obj/common.o obj/string_utilities.o obj/str_op.o obj/lock.o obj/record.o obj/endian.o obj/parse.o obj/globals.o obj/sort.o obj/input.o obj/key.o
+OBJlibcrud = obj/crud.o obj/allocator.o obj/durable.o obj/file.o obj/date.o obj/hash_tbl.o obj/debug.o obj/common.o obj/string_utilities.o obj/str_op.o obj/lock.o obj/record.o obj/endian.o obj/parse.o obj/globals.o obj/sort.o obj/input.o obj/key.o
+OBJlibcrudPR = $(patsubst obj/%.o,obj/%_prod.o,$(OBJlibcrud))
 
 OBJlibexpl = obj/export_db_lua.o 
 OBJlibexplPR = obj/export_db_lua_prod.o 
@@ -90,23 +91,24 @@ check-linker-path:
 		sudo ldconfig;\
 	fi
 
-library:
-	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBht) $(OBJlibht)
+library: $(OBJlibcrud)
 	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBcrud) $(OBJlibcrud)
-	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBs) $(OBJlibs)
-	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBr) $(OBJlibr)
-	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBf) $(OBJlibf)
-	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBp) $(OBJlibp)
+	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBht) $(OBJlibht) -L. -lcrud
+	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBs) $(OBJlibs) -L. -lcrud
+	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBr) $(OBJlibr) -L. -lcrud
+	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBf) $(OBJlibf) -L. -lcrud
+	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBp) $(OBJlibp) -L. -lcrud
 	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBl) $(OBJlibl)
 	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBdate) $(OBJlibdate)
 
 
-libraryPR:
-	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBht) $(OBJlibhtPR)
-	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBs) $(OBJlibsPR)
-	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBr) $(OBJlibrPR)
-	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBf) $(OBJlibfPR)
-	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBp) $(OBJlibpPR)
+libraryPR: $(OBJlibcrudPR)
+	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBcrud) $(OBJlibcrudPR)
+	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBht) $(OBJlibhtPR) -L. -lcrud
+	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBs) $(OBJlibsPR) -L. -lcrud
+	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBr) $(OBJlibrPR) -L. -lcrud
+	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBf) $(OBJlibfPR) -L. -lcrud
+	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBp) $(OBJlibpPR) -L. -lcrud
 	sudo gcc -Wall -fPIC -shared -o $(SHAREDLIBl) $(OBJliblPR)
 
 clean:
@@ -134,7 +136,7 @@ $(TARGET): $(OBJ)
 	sudo gcc -o $@ $?  -ldl  -fpie -pie -z relro -z now -z noexecstack -fsanitize=address 
 	make lua
 
-obj/%.o : src/%.c 
+obj/%.o : src/%.c | object-dir
 	if [ "$(IS_FEDORA)" = "no" ]; then \
 		sudo gcc  -std=c89 -Werror -Wall -Wextra -Walloca -Warray-bounds -Wnull-dereference -g3 -c $< -o $@ -Iinclude -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIC -pie -fsanitize=address;\
 	else\
@@ -181,7 +183,7 @@ net_int:
 $(TARGET)_prod: $(OBJ_PROD)
 	sudo gcc -o $@ $? -fpie -pie -z relro -z now -z noexecstack
 
-obj/%_prod.o : src/%.c
+obj/%_prod.o : src/%.c | object-dir
 	sudo gcc -Wall -g3 -c $< -o $@ -DPROD -Iinclude -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIC
 
 
@@ -351,7 +353,7 @@ $(BINDIR)/CHANGE_NAMES:
 
 install: $(TARGET) $(BINDIR)/SWAP_INDEXES $(BINDIR)/SHOW $(BINDIR)/LIST $(BINDIR)/FILE $(BINDIR)/KEYS $(BINDIR)/WRITE $(BINDIR)/UPDATE $(BINDIR)/DEL $(BINDIR)/DELa $(BINDIR)/CHANGE_NAMES check-linker-path
 	install -d $(INCLUDEDIR)
-	install -m 644 include/date.h lua/include/export_db_lua.h include/globals.h include/hash_tbl.h include/file.h include/key.h include/str_op.h include/record.h include/common.h include/types.h include/parse.h include/lock.h include/crud.h include/string_utilities.h network_interface/include/lua_start.h network_interface/include/worker_process.h network_interface/include/end_points.h $(INCLUDEDIR)/
+	install -m 644 include/allocator.h include/date.h lua/include/export_db_lua.h include/globals.h include/hash_tbl.h include/file.h include/key.h include/str_op.h include/record.h include/common.h include/types.h include/parse.h include/lock.h include/crud.h include/string_utilities.h network_interface/include/lua_start.h network_interface/include/worker_process.h network_interface/include/end_points.h $(INCLUDEDIR)/
 	install -m 755 $(SHAREDLIBht) $(LIBDIR)
 	install -m 755 $(SHAREDLIBcrud) $(LIBDIR)
 	install -m 755 $(SHAREDLIBf) $(LIBDIR)
@@ -367,7 +369,8 @@ install: $(TARGET) $(BINDIR)/SWAP_INDEXES $(BINDIR)/SHOW $(BINDIR)/LIST $(BINDIR
 
 install_prod: $(TARGET)_prod $(BINDIR)/SHOW $(BINDIR)/LIST $(BINDIR)/FILE $(BINDIR)/KEYS $(BINDIR)/WRITE $(BINDIR)/UPDATE $(BINDIR)/DEL $(BINDIR)/DELa check-linker-path
 	install -d $(INCLUDEDIR)
-	install -m 644 include/types.h include/hash_tbl.h include/file.h include/str_op.h include/record.h include/parse.h include/lock.h include/crud.h $(INCLUDEDIR)/
+	install -m 644 include/allocator.h include/types.h include/hash_tbl.h include/file.h include/str_op.h include/record.h include/parse.h include/lock.h include/crud.h $(INCLUDEDIR)/
+	install -m 755 $(SHAREDLIBcrud) $(LIBDIR)
 	install -m 755 $(SHAREDLIBht) $(LIBDIR)
 	install -m 755 $(SHAREDLIBf) $(LIBDIR)
 	install -m 755 $(SHAREDLIBs) $(LIBDIR)

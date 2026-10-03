@@ -233,7 +233,7 @@ int array_insert_at(int i, void **arr, void *el)
 			int new_size = (i - h->capacity) + 1;
 			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(long)*(h->capacity + new_size)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
@@ -242,7 +242,7 @@ int array_insert_at(int i, void **arr, void *el)
 		}else {
 			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(long)*(h->capacity + 1)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
@@ -275,7 +275,7 @@ int array_insert_at(int i, void **arr, void *el)
 			int new_size = (i - h->capacity) + 1;
 			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(int)*(h->capacity + new_size)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
@@ -284,7 +284,7 @@ int array_insert_at(int i, void **arr, void *el)
 		}else {
 			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(int)*(h->capacity + 1)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
@@ -317,7 +317,7 @@ int array_insert_at(int i, void **arr, void *el)
 			int new_size = (i - h->capacity) + 1;
 			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(double)*(h->capacity + new_size)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
@@ -326,7 +326,7 @@ int array_insert_at(int i, void **arr, void *el)
 		}else {
 			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(double)*(h->capacity + 1)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
@@ -358,7 +358,7 @@ int array_insert_at(int i, void **arr, void *el)
 			int new_size = (i - h->capacity) + 1;
 			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(float)*(h->capacity + new_size)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
@@ -367,7 +367,7 @@ int array_insert_at(int i, void **arr, void *el)
 		}else {
 			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(float)*(h->capacity + 1)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
@@ -399,7 +399,7 @@ int array_insert_at(int i, void **arr, void *el)
 			int new_size = (i - h->capacity) + 1;
 			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(unsigned char)*(h->capacity + new_size)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
@@ -408,7 +408,7 @@ int array_insert_at(int i, void **arr, void *el)
 		}else {
 			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(unsigned char)*(h->capacity + 1)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
@@ -436,7 +436,7 @@ int array_insert_at(int i, void **arr, void *el)
 			int new_size = (i - h->capacity) + 1;
 			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(char*)*(h->capacity + new_size)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
@@ -445,7 +445,7 @@ int array_insert_at(int i, void **arr, void *el)
 		}else {
 			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(char*)*(h->capacity + 1)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
@@ -484,7 +484,7 @@ int array_insert_at(int i, void **arr, void *el)
 			int new_size = (i - h->capacity) + 1;
 			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(struct Mix_t)*(h->capacity + new_size)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
@@ -493,7 +493,7 @@ int array_insert_at(int i, void **arr, void *el)
 		}else {
 			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(struct Mix_t)*(h->capacity + 1)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
@@ -535,7 +535,7 @@ int array_push(void **arr, void *el)
 			/*realloc*/
 			void *r = A_Realloc((struct Metadata*)*arr-1,(sizeof(long)*(h->capacity * 2))+ sizeof(struct Metadata),M_STATIC,NULL);
 			if(!r){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__);
 				return -1;
 			}
 			h = (struct Metadata*)r;
@@ -559,7 +559,7 @@ int array_push(void **arr, void *el)
 			/*realloc*/
 			void *r = A_Realloc((struct Metadata*)*arr-1,(sizeof(int)*(h->capacity * 2))+ sizeof(struct Metadata),M_STATIC,NULL);
 			if(!r){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__);
 				return -1;
 			}
 			h = (struct Metadata*)r;
@@ -582,7 +582,7 @@ int array_push(void **arr, void *el)
 			/*realloc*/
 			void *r = A_Realloc((struct Metadata*)*arr-1,(sizeof(double)*(h->capacity * 2))+ sizeof(struct Metadata),M_STATIC,NULL);
 			if(!r){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__);
 				return -1;
 			}
 			h = (struct Metadata*)r;
@@ -606,7 +606,7 @@ int array_push(void **arr, void *el)
 			/*realloc*/
 			void *r = A_Realloc((struct Metadata*)*arr-1,(sizeof(float)*(h->capacity * 2))+ sizeof(struct Metadata),M_STATIC,NULL);
 			if(!r){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__);
 				return -1;
 			}
 			h = (struct Metadata*)r;
@@ -629,7 +629,7 @@ int array_push(void **arr, void *el)
 			/*realloc*/
 			void *r = A_Realloc((struct Metadata*)*arr-1,(sizeof(unsigned char)*(h->capacity * 2))+ sizeof(struct Metadata),M_STATIC,NULL);
 			if(!r){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__);
 				return -1;
 			}
 			h = (struct Metadata*)r;
@@ -648,7 +648,7 @@ int array_push(void **arr, void *el)
 			/*realloc*/
 			void *r = A_Realloc((struct Metadata*)*arr-1,(sizeof(char*)*(h->capacity * 2))+ sizeof(struct Metadata),M_STATIC,NULL);
 			if(!r){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__);
 				return -1;
 			}
 			h = (struct Metadata*)r;
@@ -673,7 +673,7 @@ int array_push(void **arr, void *el)
 			/*realloc*/
 			void *r = A_Realloc((struct Metadata*)*arr-1,(sizeof(struct Mix_t)*(h->capacity * 2))+ sizeof(struct Metadata),M_STATIC,NULL);
 			if(!r){
-				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__);
+				fprintf(stderr,"A_realloc() failed. %s:%d\n",__FILE__,__LINE__);
 				return -1;
 			}
 			h = (struct Metadata*)r;
@@ -847,6 +847,6 @@ void BST_free(struct BSTnode **root)
 		BST_free(&(*root)->right);
 		
 	FREE_MIX_TYPE((*root)->value);
-	free(*root);
+	A_free(*root);
 	*root = NULL;
 }

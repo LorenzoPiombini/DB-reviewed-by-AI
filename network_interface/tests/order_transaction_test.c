@@ -1,19 +1,20 @@
 #include <assert.h>
+#include "allocator.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "lualib.h"
 static int alloc_attempt, fail_alloc;
-static void *tx_malloc(size_t n) { if(++alloc_attempt==fail_alloc) return NULL; return malloc(n); }
-static void *tx_calloc(size_t n,size_t size) { if(++alloc_attempt==fail_alloc) return NULL; return calloc(n,size); }
-static char *tx_strdup(const char *s) { if(++alloc_attempt==fail_alloc) return NULL; return strdup(s); }
-#define malloc tx_malloc
-#define calloc tx_calloc
-#define strdup tx_strdup
+static void *tx_malloc(size_t n) { if(++alloc_attempt==fail_alloc) return NULL; return A_alloc(n); }
+static void *tx_calloc(size_t n,size_t size) { if(++alloc_attempt==fail_alloc) return NULL; return A_calloc(n,size); }
+static char *tx_strdup(const char *s) { if(++alloc_attempt==fail_alloc) return NULL; return A_strdup(s); }
+#define A_alloc tx_malloc
+#define A_calloc tx_calloc
+#define A_strdup tx_strdup
 #include "../../lua/src/export_db_lua.c"
-#undef malloc
-#undef calloc
-#undef strdup
+#undef A_alloc
+#undef A_calloc
+#undef A_strdup
 
 /* Only persistence/loading is substituted. The real transaction, Lua order
  * function, cache buffers and index chains are exercised. */
@@ -46,15 +47,15 @@ static void seed(void)
         struct Cache *c=&dbCache[i];
         memset(c,0,sizeof(*c));
         c->file_name=i ? "/root/db/sales_orders_lines" : "/root/db/sales_orders_head";
-        c->indexes=2; c->index_file=calloc(2,sizeof(HashTable)); assert(c->index_file);
-        c->data_file.mem=malloc(4); assert(c->data_file.mem);
+        c->indexes=2; c->index_file=A_calloc(2,sizeof(HashTable)); assert(c->index_file);
+        c->data_file.mem=A_alloc(4); assert(c->data_file.mem);
         memcpy(c->data_file.mem,"seed",4);
         c->data_file.size=c->data_file.capacity=c->data_file.offset=4;
         for(int j=0;j<2;++j){
             c->index_file[j].size=7;
-            Node *a=calloc(1,sizeof(Node)),*b=calloc(1,sizeof(Node)); assert(a&&b);
+            Node *a=A_calloc(1,sizeof(Node)),*b=A_calloc(1,sizeof(Node)); assert(a&&b);
             a->key.type=UINT; a->key.size=16; a->key.k.n16=42; a->value=7;
-            b->key.type=STR; b->key.k.s=strdup("existing"); assert(b->key.k.s);
+            b->key.type=STR; b->key.k.s=A_strdup("existing"); assert(b->key.k.s);
             b->value=8; a->next=b; c->index_file[j].data_map[0]=a;
         }
     }
@@ -71,7 +72,7 @@ static int mock_write(lua_State *L)
     int i=(int)get((void*)lua_tostring(L,1),&cache_register,STR); assert(i>=0);
     struct Cache *c=&dbCache[i]; ++calls;
     /* Simulate an internal failure AFTER modifying data and multiple indexes. */
-    c->data_file.mem=realloc(c->data_file.mem,c->data_file.size+1); assert(c->data_file.mem);
+    c->data_file.mem=A_realloc(c->data_file.mem,c->data_file.size+1); assert(c->data_file.mem);
     c->data_file.mem[c->data_file.size++]='X';
     c->data_file.capacity=c->data_file.offset=c->data_file.size;
     for(int j=0;j<c->indexes;++j){
@@ -141,6 +142,20 @@ int main(void)
         assert(lua_isnil(L,-2) && lua_tointeger(L,-1)==-25 && calls==0);
         verify_rollback(indexes,buffers); lua_pop(L,2);
         fail_alloc=0;
+        for(int i=0;i<2;++i) order_tx_free(&dbCache[i]);
+    }
+    seed();
+    {
+        void *fill[4096]; size_t used=0;
+        HashTable *ix[2]={dbCache[0].index_file,dbCache[1].index_file};
+        ui8 *mem[2]={dbCache[0].data_file.mem,dbCache[1].data_file.mem};
+        while(used<4096 && (fill[used]=A_alloc(4096))) ++used;
+        assert(used<4096);
+        calls=0;
+        lua_getglobal(L,"run_order"); assert(lua_pcall(L,0,2,0)==LUA_OK);
+        assert(lua_isnil(L,-2) && lua_tointeger(L,-1)==-25 && !calls);
+        verify_rollback(ix,mem); lua_pop(L,2);
+        while(used) A_free(fill[--used]);
         for(int i=0;i<2;++i) order_tx_free(&dbCache[i]);
     }
     seed();

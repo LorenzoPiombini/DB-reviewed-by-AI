@@ -286,6 +286,7 @@ int create_record(char *file_name, struct Schema sch, struct Record_f *rec)
 			A_free(rec->field_set);
 		if(rec->fields) 
 			A_free(rec->fields);
+        rec->fields=NULL; rec->field_set=NULL;
 		fprintf(stderr,"(%s): A_Malloc() failed, %s:%d.\n",ERR_MSG_PAR-2);
 		return -1;
 	}
@@ -305,38 +306,20 @@ int create_record(char *file_name, struct Schema sch, struct Record_f *rec)
 
 int copy_schema(struct Schema *src,struct Schema *dest)
 {
+    memset(dest,0,sizeof *dest);
 	dest->fields_num = src->fields_num;
 	dest->fields_name = (char**)A_Malloc(sizeof(char*) * src->fields_num,M_STATIC,NULL);
-	if(!dest->fields_name)
-		return -1;
+	if(!dest->fields_name){ free_schema(dest); return -1; }
 	dest->types = (int*)A_Malloc(sizeof(int)*src->fields_num,M_STATIC,NULL);
-	if(!dest->types){
-		A_free(dest->fields_name);
-		return -1;
-	}
+	if(!dest->types){ free_schema(dest); return -1; }
 	dest->is_dropped = (ui8*)A_Malloc(sizeof(ui8)*src->fields_num,M_STATIC,NULL);
-	if(!dest->is_dropped){
-		A_free(dest->fields_name);
-		A_free(dest->types);
-		return -1;
-	}
+	if(!dest->is_dropped){ free_schema(dest); return -1; }
 
 	dest->constraints = (ui8*)A_Malloc(sizeof(ui8)*src->fields_num,M_STATIC,NULL);
-	if(!dest->constraints){
-		A_free(dest->fields_name);
-		A_free(dest->types);
-		A_free(dest->is_dropped);
-		return -1;
-	}
+	if(!dest->constraints){ free_schema(dest); return -1; }
 
 	dest->defaults = (void**)A_Malloc(sizeof(void*)*src->fields_num,M_STATIC,NULL);
-	if(!dest->defaults){
-		A_free(dest->fields_name);
-		A_free(dest->types);
-		A_free(dest->is_dropped);
-		A_free(dest->constraints);
-		return -1;
-	}
+	if(!dest->defaults){ free_schema(dest); return -1; }
 	
 	memcpy(dest->types,src->types,sizeof(int)*src->fields_num);
 	memcpy(dest->is_dropped,src->is_dropped,sizeof(ui8)*src->fields_num);
@@ -348,6 +331,7 @@ int copy_schema(struct Schema *src,struct Schema *dest)
 	for(i = 0; i < dest->fields_num; i++){
 		size_t sz = strlen(src->fields_name[i]);
 		dest->fields_name[i] = (char*)A_Malloc(sz+1,M_STATIC,NULL);
+		if(!dest->fields_name[i]){ free_schema(dest); return -1; }
 		dest->fields_name[i][sz] = '\0';
 		strncpy(dest->fields_name[i],src->fields_name[i],sz);
 		if(src->constraints[i] == CONST_DEFAULT 
@@ -913,20 +897,16 @@ int set_schema(char names[][MAX_FIELD_LT], int *types_i, struct Schema *sch, int
 
 int free_schema(struct Schema *sch)
 {
-	ui16 i;
-	for(i = 0; i < sch->fields_num;i++){
-		A_free(sch->fields_name[i]);
-		if(sch->defaults[i]){
-			A_free(sch->defaults[i]);
-		}
-	}
-
-	A_free(sch->types);
-	A_free(sch->is_dropped);
-	A_free(sch->constraints);
-	A_free(sch->fields_name);
-	A_free(sch->defaults);
-	return 0;
+    ui16 i;
+    if(!sch) return 0;
+    for(i=0;i<sch->fields_num;i++){
+        if(sch->fields_name) A_free(sch->fields_name[i]);
+        if(sch->defaults) A_free(sch->defaults[i]);
+    }
+    A_free(sch->types); A_free(sch->is_dropped); A_free(sch->constraints);
+    A_free(sch->fields_name); A_free(sch->defaults);
+    memset(sch,0,sizeof *sch);
+    return 0;
 }
 
 unsigned char set_field(
@@ -2291,7 +2271,8 @@ void free_type_file(struct Record_f *rec,int optimized)
 
 void free_record(struct Record_f *rec, int fields_num)
 {
-	if(!rec) return;
+    if(!rec) return;
+    if(!rec->fields){ A_free(rec->field_set); rec->field_set=NULL; return; }
 	int i;
 	for (i = 0; i < fields_num; i++){
 
@@ -2583,7 +2564,7 @@ void free_array_of_arrays(int len, struct Record_f ****array, int *len_ia, int s
 
 	if (!size_ia)
 	{
-		free(NULL,*array);
+		A_free(NULL,*array);
 		return;
 	}
 
@@ -2599,13 +2580,13 @@ void free_array_of_arrays(int len, struct Record_f ****array, int *len_ia, int s
 			}
 			else
 			{
-				free(NULL,(*array)[i]);
+				A_free(NULL,(*array)[i]);
 				return;
 			}
 		}
 	}
 
-	free(NULL,*array);
+	A_free(NULL,*array);
 }
 
 #endif

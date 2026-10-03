@@ -1,3 +1,4 @@
+#include "allocator.h"
 #include <stdio.h>
 #include <time.h>
 #include <string.h>
@@ -89,9 +90,9 @@ int journal(file_t caller_fd, file_offset offset, void *key, int key_type, int o
 	size_t cwd_length = strlen(cwd);
 	char *dynamic_db_path = NULL; 
 	if(cwd_length + strlen("/db") >= 1024){
-		dynamic_db_path = (char*)malloc(cwd_length+strlen("/db")+1);
+		dynamic_db_path = (char*)A_alloc(cwd_length+strlen("/db")+1);
 		if(!dynamic_db_path){
-			error("malloc() failed.",__LINE__ -1);
+			error("A_alloc() failed.",__LINE__ -1);
 			close(fd);
 			return -1;
 		}
@@ -107,7 +108,7 @@ int journal(file_t caller_fd, file_offset offset, void *key, int key_type, int o
 		if((database_dir = opendir(dynamic_db_path)) == NULL){
 			error("can't get current directory.",__LINE__ -1);
 			close(fd);
-			free(dynamic_db_path);
+			A_free(dynamic_db_path);
 			return -1;
 		}
 	}else{
@@ -129,13 +130,13 @@ int journal(file_t caller_fd, file_offset offset, void *key, int key_type, int o
 
 		size_t fl_name_length = strlen(dir_data->d_name);
 		if(fl_name_length > 1024){
-			dynamic_file_name = (char*)malloc(fl_name_length + 1);
+			dynamic_file_name = (char*)A_alloc(fl_name_length + 1);
 			if(!dynamic_file_name){
-				error("malloc() failed.\n",__LINE__ -1);
+				error("A_alloc() failed.\n",__LINE__ -1);
 				close(fd);
 				closedir(database_dir);
 				if(dynamic_db_path)
-					free(dynamic_db_path);
+					A_free(dynamic_db_path);
 
 				return -1;
 			}
@@ -148,12 +149,12 @@ int journal(file_t caller_fd, file_offset offset, void *key, int key_type, int o
 	}
 	
 	closedir(database_dir);
-	if(dynamic_db_path) free(dynamic_db_path);
+	if(dynamic_db_path) A_free(dynamic_db_path);
 
 	if(dir_data == NULL && errno == 0){
 		error("file name not found.\n",__LINE__ -1);
 		close(fd);
-		if(dynamic_file_name) free(dynamic_file_name);
+		if(dynamic_file_name) A_free(dynamic_file_name);
 		return -1;
 	}	
 
@@ -161,11 +162,11 @@ int journal(file_t caller_fd, file_offset offset, void *key, int key_type, int o
 		if(strlen(dynamic_file_name) > MAX_FILE_NAME){
 			error("code refactor needed for journal operation.",__LINE__);
 			close(fd);
-			free(dynamic_file_name);
+			A_free(dynamic_file_name);
 			return -1;
 		}
 		strncpy(node.file_name,dynamic_file_name,strlen(dynamic_file_name));
-		free(dynamic_file_name);
+		A_free(dynamic_file_name);
 	}else{
 		strncpy(node.file_name,file_name,strlen(file_name));
 	}
@@ -279,9 +280,9 @@ int journal(file_t caller_fd, file_offset offset, void *key, int key_type, int o
 #endif
 	{	
 		size_t l = strlen((char *) key)+1;
-		node.key.k.s = (char *)malloc(l);
+		node.key.k.s = (char *)A_alloc(l);
 		if(!node.key.k.s){
-			fprintf(stderr,"malloc() failed, %s:%d.\n",__FILE__,__LINE__-1);
+			fprintf(stderr,"A_alloc() failed, %s:%d.\n",__FILE__,__LINE__-1);
 			return -1;
 			
 		}
@@ -331,7 +332,7 @@ int journal(file_t caller_fd, file_offset offset, void *key, int key_type, int o
 int push_journal(struct stack *index, struct Node_stack node)
 {
 	if(index->capacity == 0){
-		index->elements = (struct Node_stack*)malloc(sizeof(struct Node_stack));
+		index->elements = (struct Node_stack*)A_alloc(sizeof(struct Node_stack));
 		if(!index->elements){
 			fprintf(stderr,"(%s): malloc failed %s:%d.\n",p,__FILE__,__LINE__-2);
 			return -1;
@@ -345,7 +346,7 @@ int push_journal(struct stack *index, struct Node_stack node)
 	}
 
 	size_t new_size = index->capacity + 1;
-	struct Node_stack *new_elements= (struct Node_stack*) realloc(index->elements,
+	struct Node_stack *new_elements= (struct Node_stack*) A_realloc(index->elements,
 							new_size * sizeof(struct Node_stack));
 	if(!new_elements){
 		fprintf(stderr,"(%s): realloc failed %s:%d.\n",p,__FILE__,__LINE__-2);
@@ -364,7 +365,7 @@ int pop_journal(struct stack *index)
 	if(index->capacity == 0) return -1;
 
 	size_t new_size = index->capacity -1;
-	struct Node_stack *new_elements = (struct Node_stack*)realloc(index->elements,
+	struct Node_stack *new_elements = (struct Node_stack*)A_realloc(index->elements,
 						new_size * sizeof(struct Node_stack));
 	if(!new_elements){
 		fprintf(stderr,"(%s): realloc failed %s:%d.\n",p,__FILE__,__LINE__-2);
@@ -393,7 +394,7 @@ int is_empty(struct stack *index)
 
 void free_stack(struct stack *index)
 {
-	free(index->elements);
+	A_free(index->elements);
 }
 
 int write_journal_index(file_t *fd,struct stack *index)
@@ -539,9 +540,9 @@ int read_journal_index(file_t fd,struct stack *index)
 
 	int cap = (int)swap32(cap_ne);
 
-	index->elements = (struct Node_stack*)malloc(cap *sizeof(struct Node_stack));
+	index->elements = (struct Node_stack*)A_alloc(cap *sizeof(struct Node_stack));
 	if(!index->elements){
-		error("malloc() failed.",__LINE__-2);
+		error("A_alloc() failed.",__LINE__-2);
 		return 0;
 	}
 	index->capacity = cap;
@@ -604,9 +605,9 @@ int read_journal_index(file_t fd,struct stack *index)
 				return -1;
 			}
 
-			index->elements[i].key.k.s = (char *)malloc(size);
+			index->elements[i].key.k.s = (char *)A_alloc(size);
 			if(!index->elements[i].key.k.s){
-				error("malloc() failed",__LINE__-1);
+				error("A_alloc() failed",__LINE__-1);
 				return -1;
 			}
 

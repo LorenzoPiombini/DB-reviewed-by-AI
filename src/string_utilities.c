@@ -18,7 +18,7 @@ i64 error_value = -1;
 static void free_string(struct String *str){
 	memset(str->base,0,STR_BASE);
 	if(str->str)
-		free(str->str);
+		A_free(str->str);
 
 }
 
@@ -69,9 +69,9 @@ static int append(struct String *str, char *str_to_appen)
 	size_t nl = strlen(str_to_appen);
 
 	if(str->str){
-		char *n = (char*)realloc(str->str,str->size + nl  +1);
+		char *n = (char*)A_realloc(str->str,str->size + nl  +1);
 		if(!n){
-			fprintf(stderr,"realloc() failed, %s:%d\n",__FILE__,__LINE__-2);	
+			fprintf(stderr,"A_realloc() failed, %s:%d\n",__FILE__,__LINE__-2);
 			return -1;
 		}
 

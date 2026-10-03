@@ -16,7 +16,7 @@ ${CC:-cc} -std=gnu11 -g -O1 -fno-omit-frame-pointer \
     ${SANITIZERS:--fsanitize=address,undefined} \
     $LUA_CFLAGS -Iinclude -Ilua/include \
     network_interface/tests/disk_roundtrip_test.c lua/src/export_db_lua.c \
-    src/crud.c src/durable.c src/file.c "$build_dir/date.o" src/hash_tbl.c src/debug.c src/common.c \
+    src/crud.c src/allocator.c src/durable.c src/file.c "$build_dir/date.o" src/hash_tbl.c src/debug.c src/common.c \
     src/string_utilities.c src/str_op.c src/lock.c src/record.c src/endian.c \
     src/parse.c src/globals.c src/sort.c src/input.c src/key.c \
     $LUA_LIBS -lm -o "$build_dir/disk_roundtrip_test"

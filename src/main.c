@@ -692,10 +692,10 @@ int main(int argc, char *argv[])
 						 {
 							if (key_conv) {
 								if (!set(key_conv, key_type, offset, &ht)) {
-									free(key_conv);
+									A_free(key_conv);
 									goto clean_on_error_2;
 								}
-								free(key_conv);
+								A_free(key_conv);
 							}
 						} 
 #if defined(__linux__) || defined(__APPLE__)
@@ -1251,7 +1251,7 @@ int main(int argc, char *argv[])
 			Node *record_del = NULL;
 			if (key_conv) {
 				record_del = ht_delete(key_conv, &ht[index_nr], key_type);
-				free(key_conv);
+				A_free(key_conv);
 
 			}
 #if defined(__linux__) || defined(__APPLE__)

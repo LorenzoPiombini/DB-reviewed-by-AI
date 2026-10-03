@@ -10,6 +10,7 @@
 #include "record.h"
 #include "file.h"
 #include "crud.h"
+#include "allocator.h"
 #include "date.h"
 #include "lua_start.h"
 #include "json.h"
@@ -32,7 +33,7 @@ static int create_nested_lua_table(ui8 *data,size_t data_size,size_t *bwalked, u
 
 int init_lua(char *config_file)
 {
-    if(L || !config_file) return -1;
+    if(L || !config_file || A_init_mainzone() < 0) return -1;
     loaded_config_file = strdup(config_file);
     if(!loaded_config_file) return -1;
 	L = luaL_newstate();

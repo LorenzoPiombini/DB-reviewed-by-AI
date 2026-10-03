@@ -41,9 +41,10 @@ int open_file(char *fileName, int use_trunc, file_t *fd)
 		*fd = open(fileName, O_WRONLY | O_TRUNC, S_IRWXU);
 	}
 
-	if ( errno != 0) {
-		*fd = errno;
-		return errno;			
+	if (*fd == -1) {
+		ERROR_CODE_FILE_OPERATION = errno;
+		*fd = -1; /* An errno value is not a file descriptor. */
+		return -1;
 	}
 #elif defined(_WIN32)
 	DWORD creation = 0;	
@@ -444,39 +445,50 @@ static size_t get_disk_size_record(struct Record_f *rec)
 
 int os_read(file_t fd, void* data, size_t size)
 {
+    unsigned char *cursor = data;
+    while(size){
 #if defined(__linux__) || defined(__APPLE__)
-		if(read(fd,data,size) == -1){
-			fprintf(stderr,"(%s):read from file failed,%s:%d.\n",prog,__FILE__,__LINE__);
-			return -1;
-		}
-
+        /* A bounded chunk also keeps the count representable by ssize_t. */
+        size_t chunk = size > 0x40000000U ? 0x40000000U : size;
+        ssize_t received = read(fd,cursor,chunk);
+        if(received < 0 && errno == EINTR) continue;
+        if(received <= 0){
+            if(received == 0) errno = EIO; /* Truncated field / unexpected EOF. */
+            return -1;
+        }
 #elif defined(_WIN32)
-		DWORD bread = 0;
-		if(!ReadFile(fd,data,size,&bread,NULL)){
-			fprintf(stderr,"(%s):read from file failed,%s:%d.\n",prog,__FILE__,__LINE__);
-			return -1;
-		}
+        DWORD received = 0;
+        DWORD chunk = size > 0x40000000U ? 0x40000000U : (DWORD)size;
+        if(!ReadFile(fd,cursor,chunk,&received,NULL)) return -1;
+        if(!received){ SetLastError(ERROR_HANDLE_EOF); return -1; }
 #endif
-		return 0;
-
+        cursor += received;
+        size -= received;
+    }
+    return 0;
 }
 int os_write(file_t fd, void* data, size_t size)
 {
-
+    const unsigned char *cursor = data;
+    while(size){
 #if defined(__linux__) || defined(__APPLE__)
-		if(write(fd,data,size) == -1){
-			fprintf(stderr,"(%s):read from file failed,%s:%d.\n",prog,__FILE__,__LINE__);
-			return -1;
-		}
-
+        size_t chunk = size > 0x40000000U ? 0x40000000U : size;
+        ssize_t written = write(fd,cursor,chunk);
+        if(written < 0 && errno == EINTR) continue;
+        if(written <= 0){
+            if(written == 0) errno = EIO;
+            return -1;
+        }
 #elif defined(_WIN32)
-		DWORD written = 0;
-		if(!WriteFile(fd,data,size,&written,NULL)){
-			fprintf(stderr,"(%s):read from file failed,%s:%d.\n",prog,__FILE__,__LINE__);
-			return -1;
-		}
+        DWORD written = 0;
+        DWORD chunk = size > 0x40000000U ? 0x40000000U : (DWORD)size;
+        if(!WriteFile(fd,cursor,chunk,&written,NULL)) return -1;
+        if(!written){ SetLastError(ERROR_WRITE_FAULT); return -1; }
 #endif
-		return 0;
+        cursor += written;
+        size -= written;
+    }
+    return 0;
 }
 
 
@@ -843,7 +855,7 @@ unsigned char read_all_index_file(file_t fd, HashTable **ht, int *p_index)
 	}
 
 	int array_size = (int)swap32(a_s);
-	if (array_size == 0) {
+	if (array_size <= 0) {
 		printf("wrong reading from file, check position. %s:%d.\n", F, L - 8);
 		return 0;
 	}
@@ -863,7 +875,8 @@ unsigned char read_all_index_file(file_t fd, HashTable **ht, int *p_index)
 	file_offset move_to = (array_size * sizeof(file_offset)) + sizeof(int);
 	if (move_in_file_bytes(fd, move_to) == STATUS_ERROR) {
 		__er_file_pointer(F, L - 2);
-		A_free(ht);
+		A_free(*ht);
+        *ht = NULL;
 		return 0;
 	}
 
@@ -872,7 +885,8 @@ unsigned char read_all_index_file(file_t fd, HashTable **ht, int *p_index)
 		if (!read_index_file(fd, &((*ht)[i])))
 		{
 			printf("read from file failed. %s:%d.\n", F, L - 2);
-			free_ht_array(*ht, i);
+			free_ht_array(*ht, array_size);
+            *ht = NULL; *p_index = 0;
 			return 0;
 		}
 
@@ -881,7 +895,8 @@ unsigned char read_all_index_file(file_t fd, HashTable **ht, int *p_index)
 			if (move_in_file_bytes(fd, sizeof(int)) == STATUS_ERROR)
 			{
 				__er_file_pointer(F, L - 2);
-				free_ht_array(*ht, i);
+				free_ht_array(*ht, array_size);
+            *ht = NULL; *p_index = 0;
 				return 0;
 			}
 		}
@@ -898,7 +913,8 @@ unsigned char read_index_file(file_t fd, HashTable *ht)
 		return 0;
 	}
 
-	ht->size = (int)swap32(s_n); 
+	ht->size = (int)swap32(s_n);
+    if(ht->size < 1 || ht->size > MAX_HT_BUCKET){ ht->size=0; return 0; }
 
 	ui32 ht_ln = 0;
 	if (os_read(fd, &ht_ln, sizeof(ht_ln)) == STATUS_ERROR)
@@ -963,6 +979,7 @@ unsigned char read_index_file(file_t fd, HashTable *ht)
 				memset(new_node,0,sizeof *new_node);
 				new_node->key.k.s = duplicate_str(key);
 				if (!new_node->key.k.s){
+                    A_free(new_node);
 					fprintf(stderr,"duplicate_str() failed, %s:%d.\n",F, L - 3);
 					free_nodes(ht->data_map, ht->size);
 					A_free(key);
@@ -6951,7 +6968,7 @@ int read_file(HANDLE fd, char *file_name, struct Record_f *rec, struct Schema sc
 				ui32 j;
 				for(j = 0; j < sz; j++){
 					if (!rec->fields[i].data.file.recs){
-						rec->fields[i].data.file.recs = (struct Record_f*)malloc(sizeof(struct Record_f));
+						rec->fields[i].data.file.recs = (struct Record_f*)A_alloc(sizeof(struct Record_f));
 						rec->fields[i].data.file.count = sz;
 						if(!rec->fields[i].data.file.recs){
 							fprintf(stderr,"malloc failed %s:%d.\n",F,L-3);
@@ -6973,7 +6990,7 @@ int read_file(HANDLE fd, char *file_name, struct Record_f *rec, struct Schema sc
 					}else{
 
 						ui32 new_size = rec->fields[i].data.file.count + 1;	
-						struct Record_f* new_rec = (struct Record_f*)realloc(rec->fields[i].data.file.recs,
+						struct Record_f* new_rec = (struct Record_f*)A_realloc(rec->fields[i].data.file.recs,
 																	new_size * sizeof(struct Record_f));
 
 						if(!new_rec){
@@ -7003,7 +7020,7 @@ int read_file(HANDLE fd, char *file_name, struct Record_f *rec, struct Schema sc
 					while ((update_rec_pos = get_update_offset(fd)) > 0) {
 						ui32 new_size = rec->fields[i].data.file.count + 1;
 
-						struct Record_f *n = realloc(rec->fields[i].data.file.recs,	
+						struct Record_f *n = A_realloc(rec->fields[i].data.file.recs,
 								new_size * sizeof(struct Record_f));
 
 						if (!n) {
@@ -7318,6 +7335,7 @@ void close_ram_file(struct Ram_file *ram)
 {
 	if(ram->mem)
 		A_free(ram->mem);
+    ram->mem = NULL;
 	ram->size = 0;
 	ram->capacity = 0;
 }
@@ -7331,10 +7349,14 @@ int get_all_record(file_t fd, struct Ram_file *ram)
 {
 
 	file_offset eof = go_to_EOF(fd);
-	if(begin_in_file(fd) == -1) return -1;
+	if(eof < 0 || begin_in_file(fd) == -1) return -1;
 
-	if(init_ram_file(ram,(size_t)eof) == -1) return -1;	
-	if(os_read(fd,ram->mem,ram->capacity) == -1) return -1;
+	if(init_ram_file(ram,(size_t)eof) == -1) return -1;
+    /* An empty file gets spare RAM capacity, but has no bytes to read. */
+	if(os_read(fd,ram->mem,(size_t)eof) == -1){
+        close_ram_file(ram);
+        return -1;
+    }
 	ram->size = (size_t)eof;
 	ram->offset = 0;
 	return 0;
@@ -11696,101 +11718,27 @@ int cache_file(int *fds,char *file_name,struct Schema *sch,struct Cache *c,HashT
 int cache_file(HANDLE *fds,char *file_name,struct Schema *sch,struct Cache *c,HashTable *cache_register,int cache_pos)
 #endif
 {
-	
-	/*check if the file is cached already*/
-#if defined(__linux__) || defined(__APPLE__)
-	if(get((void*)file_name,cache_register,STR) != -1)
-#elif defined(_WIN32)
-	if(get((void*)file_name,cache_register,STR_KEY) != -1)
-#endif
-		return FILE_IS_CACHED;
-
-	int index = 0;
-	if(cache_pos != -1){
-		if(!read_all_index_file(fds[0],&c[cache_pos].index_file,&index))
-		{
-			free_ht_array(c[cache_pos].index_file,index);
-			close_ram_file(&c[cache_pos].data_file);
-			return -1;
-		}
-		c[cache_pos].indexes = index;
-	}else{
-		if(!read_all_index_file(fds[0],&c->index_file,&index))
-		{
-			free_ht_array(c->index_file,index);
-			close_ram_file(&c->data_file);
-			return -1;
-		}
-		c->indexes = index;
-	}
-
-	if(cache_pos != -1){
-		if(get_all_record(fds[1],&c[cache_pos].data_file) == -1)
-		{
-			free_ht_array(c[cache_pos].index_file,index);
-			close_ram_file(&c[cache_pos].data_file);
-			return -1;
-		}
-	}else{
-		if(get_all_record(fds[1],&c->data_file) == -1)
-		{
-			free_ht_array(c->index_file,index);
-			close_ram_file(&c->data_file);
-			return -1;
-		}
-	}
-		
-	if(cache_pos != -1){
-		if(copy_schema(sch,&c[cache_pos].sch) == -1){
-			free_ht_array(c[cache_pos].index_file,index);
-			close_ram_file(&c[cache_pos].data_file);
-			return -1;
-		}
-
-		c[cache_pos].ts = time(NULL);
-		c[cache_pos].file_name = duplicate_str(file_name);
-		if(!(c[cache_pos].file_name)){
-			fprintf(stderr,"duplicate_str() failed, %s:%d.\n",F, L - 3);
-			free_ht_array(c[cache_pos].index_file,index);
-			close_ram_file(&c[cache_pos].data_file);
-			return -1;
-		}
-	}else{
-		if(copy_schema(sch,&c->sch) == -1){
-			free_ht_array(c->index_file,index);
-			close_ram_file(&c->data_file);
-			return -1;
-		}
-
-		c->ts = time(NULL);
-		c->file_name = duplicate_str(file_name);
-		if(!c->file_name){
-			fprintf(stderr,"duplicate_str() failed, %s:%d.\n",F, L - 3);
-			free_ht_array(c->index_file,index);
-			close_ram_file(&c->data_file);
-			return -1;
-		}
-	}
-	
-#if defined(__linux__) || defined(__APPLE__)
-	if(!set((void*)file_name,STR,cache_pos,cache_register))
-#elif defined(_WIN32)
-	if(!set((void*)file_name,STR_KEY,cache_pos,cache_register))
-#endif
-	{
-		free_ht_array(c->index_file,index);
-		close_ram_file(&c->data_file);
-		return -1;
-	}
-	return 0;
+    struct Cache staged;
+    struct Cache *slot = cache_pos == -1 ? c : &c[cache_pos];
+    memset(&staged,0,sizeof staged);
+    if(get((void *)file_name,cache_register,STR) != -1) return FILE_IS_CACHED;
+    if(!read_all_index_file(fds[0],&staged.index_file,&staged.indexes)) goto failed;
+    if(get_all_record(fds[1],&staged.data_file) == -1) goto failed;
+    if(copy_schema(sch,&staged.sch) == -1) goto failed;
+    staged.file_name=duplicate_str(file_name);
+    if(!staged.file_name) goto failed;
+    staged.ts=time(NULL);
+    if(!set((void *)file_name,STR,cache_pos,cache_register)) goto failed;
+    *slot=staged;
+    return 0;
+failed:
+    free_cache(&staged);
+    return -1;
 }
 
 void free_cache(struct Cache *c)
 {
-	if(c->index_file == NULL)
-		return;
-
-	free_ht_array(c->index_file,c->indexes);
+    if(c->index_file) free_ht_array(c->index_file,c->indexes);
 	close_ram_file(&c->data_file);
 	free_schema(&c->sch);
 	A_free(c->file_name);

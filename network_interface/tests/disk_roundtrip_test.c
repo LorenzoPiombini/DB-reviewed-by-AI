@@ -1,5 +1,6 @@
 /* Full engine + Lua module, with real files and fresh reader processes. */
 #include <assert.h>
+#include "allocator.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +21,21 @@ static void create_fixture(char *name)
     assert(create_header(&header));
     assert(write_header(fds[2],&header));
     close_file(3,fds[0],fds[1],fds[2]);
+    /* Failed schema copies must release partial zone allocations safely. */
+    for(size_t budget=16;budget<=512;budget+=16){
+        void *fill[10000]; size_t n=0;
+        void *reserve=A_alloc(budget); assert(reserve);
+        while(n<10000 && (fill[n]=A_alloc(4096))) ++n;
+        while(n<10000 && (fill[n]=A_alloc(16))) ++n;
+        assert(n<10000);
+        A_free(reserve);
+        struct Schema copy={0};
+        int rc=copy_schema(&schema,&copy);
+        assert(rc==0 || rc==-1);
+        if(rc==0) assert(copy.fields_num==schema.fields_num);
+        free_schema(&copy); /* Also safe after a failed partial copy. */
+        while(n) A_free(fill[--n]);
+    }
     free_schema(&schema);
 }
 static void run_lua(lua_State *state, const char *code)

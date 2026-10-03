@@ -721,7 +721,8 @@ void free_nodes(Node **data_map, int size)
 {
 	int i = 0;
 	for (i = 0; i < size; i++) {
-		Node *current = (*data_map);
+		Node *current = data_map[i];
+        data_map[i] = NULL;
 		while (current) {
 			switch (current->key.type)
 			{

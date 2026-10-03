@@ -7,7 +7,7 @@
 #include "parse.h"
 #include <time.h>
 
-#define STD_RAM_FILE 4096*1000 /* 4 MiB */  
+#define STD_RAM_FILE 4096 /* Initial buffer; grows as records are appended. */
 #if defined(__linux__) || defined(__APPLE__)
 #define WOS 0
 #elif defined(_WIN32) || defined(_WIN64)
