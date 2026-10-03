@@ -10,6 +10,7 @@
 #include "str_op.h"
 #include "key.h"
 #include "string_utilities.h"
+#include "allocator.h"
 
 /*order starting number*/
 #define ORDER_BASE 100
@@ -171,7 +172,7 @@ char *get_all_keys_for_file(file_t *fds,int index,int mode,HashTable *index_file
 	}else{
 		str_size += (2 + all_keys.length);
 	}
-	char *str_keys = (char *)malloc(str_size + 1);
+	char *str_keys = (char *)A_Malloc(str_size + 1,M_STATIC,NULL);
 	if(!str_keys){
 		/*log failure*/
 		free_keys_data(&all_keys);
@@ -228,7 +229,7 @@ char *get_all_keys_for_file(file_t *fds,int index,int mode,HashTable *index_file
 					size_t n = number_of_digit(all_keys.keys[i].k.n16);
 					if(copy_to_string(&str_keys[ind_str],n+1,"%d",all_keys.keys[i].k.n16) == -1){
 						/*log failure*/						
-						free(str_keys);	
+						A_free(str_keys);	
 						free_keys_data(&all_keys);
 						return NULL;
 					}
@@ -245,7 +246,7 @@ char *get_all_keys_for_file(file_t *fds,int index,int mode,HashTable *index_file
 					size_t n = number_of_digit(all_keys.keys[i].k.n16);
 					if(copy_to_string(&str_keys[ind_str],n+1,"%d",all_keys.keys[i].k.n16) == -1){
 						/*log failure*/						
-						free(str_keys);	
+						A_free(str_keys);	
 						free_keys_data(&all_keys);
 						return NULL;
 					}
@@ -259,7 +260,7 @@ char *get_all_keys_for_file(file_t *fds,int index,int mode,HashTable *index_file
 				size_t n = number_of_digit(all_keys.keys[i].k.n);
 				if(copy_to_string(&str_keys[ind_str],n+1,"%d",all_keys.keys[i].k.n) == -1){
 					/*log failure*/						
-					free(str_keys);	
+					A_free(str_keys);	
 					free_keys_data(&all_keys);
 					return NULL;
 				}
@@ -274,7 +275,7 @@ char *get_all_keys_for_file(file_t *fds,int index,int mode,HashTable *index_file
 		}
 		default:
 			free_keys_data(&all_keys);
-			free(str_keys);	
+			A_free(str_keys);	
 			return NULL;
 		}
 	}

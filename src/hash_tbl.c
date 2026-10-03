@@ -11,6 +11,7 @@
 #include "endian.h"
 #include "db_types.h"
 #include "common.h"
+#include "allocator.h"
 #include "string_utilities.h"
 
 
@@ -71,9 +72,9 @@ int write_ht(file_t fd, HashTable *ht)
 	const unsigned long EIGTH_Kib = 1024 * 8;
 	long msize = EIGTH_Kib;
 	long bwritten = 0;
-	ui8 *buff = malloc(msize);
+	ui8 *buff = A_Malloc(msize,M_STATIC,NULL);
 	if(!buff){
-		fprintf(stderr,"malloc failed, %s:%d.\n",F, L - 2);
+		fprintf(stderr,"A_Malloc failed, %s:%d.\n",F, L - 2);
 		return 0;
 	}
 
@@ -87,10 +88,10 @@ int write_ht(file_t fd, HashTable *ht)
 
 	if(len(*ht) == 0) {
 		if(os_write(fd,buff,bwritten) == -1){
-			free(buff);
+			A_free(buff);
 			return 0;
 		}
-		free(buff);
+		A_free(buff);
 		return 1;
 	}
 
@@ -112,9 +113,9 @@ int write_ht(file_t fd, HashTable *ht)
 				ui64 value = swap64(current->value);
 
 				if(bwritten + (sizeof(ui32) + (sizeof(ui64) * 2)) > EIGTH_Kib){
-					ui8 *new = realloc(buff,msize + EIGTH_Kib);
+					ui8 *new = A_Realloc(buff,msize + EIGTH_Kib,M_STATIC,NULL);
 					if(!new){
-						free(buff);
+						A_free(buff);
 						return 0;
 					}
 
@@ -153,9 +154,9 @@ int write_ht(file_t fd, HashTable *ht)
 
 				if(k){
 					if(bwritten + (sizeof(k) + sizeof(ui32) + (sizeof(ui8) + sizeof(ui64))) > EIGTH_Kib){
-						ui8 *new = realloc(buff,msize + EIGTH_Kib);
+						ui8 *new = A_Realloc(buff,msize + EIGTH_Kib,M_STATIC,NULL);
 						if(!new){
-							free(buff);
+							A_free(buff);
 							return 0;
 						}
 
@@ -164,9 +165,9 @@ int write_ht(file_t fd, HashTable *ht)
 					}
 				}else{
 					if(bwritten + (sizeof(k16) + sizeof(ui32) + (sizeof(ui64) * 2)) > EIGTH_Kib){
-						ui8 *new = realloc(buff,msize + EIGTH_Kib);
+						ui8 *new = A_Realloc(buff,msize + EIGTH_Kib,M_STATIC,NULL);
 						if(!new){
-							free(buff);
+							A_free(buff);
 							return 0;
 						}
 
@@ -196,7 +197,7 @@ int write_ht(file_t fd, HashTable *ht)
 			}
 			default:
 				fprintf(stderr, "key type not supported.\n");
-				free(buff);
+				A_free(buff);
 				return 0;
 			}
 		}
@@ -204,11 +205,11 @@ int write_ht(file_t fd, HashTable *ht)
 
 	if(os_write(fd, buff, bwritten) == -1) {
 		perror("writing index file");
-		free(buff);
+		A_free(buff);
 		return 0;
 	}
 
-	free(buff);
+	A_free(buff);
 	return 1;
 }
 
@@ -309,9 +310,9 @@ int set(void *key, int key_type, file_offset value, HashTable *tbl)
 {
 
 	int index = hash(key, tbl->size, key_type);
-	Node *new_node = (Node*) malloc(sizeof *new_node);
+	Node *new_node = (Node*) A_Malloc(sizeof *new_node,M_STATIC,NULL);
 	if (!new_node){
-		fprintf(stderr,"malloc failed, %s:%d.\n",F, L - 2);
+		fprintf(stderr,"A_Malloc failed, %s:%d.\n",F, L - 2);
 		return 0;
 	}
 
@@ -380,8 +381,8 @@ int set(void *key, int key_type, file_offset value, HashTable *tbl)
 				if (strncmp(tbl->data_map[index]->key.k.s, new_node->key.k.s, ++key_len) == 0)
 				{
 					printf("key %s, already exist.\n", new_node->key.k.s);
-					free(new_node->key.k.s);
-					free(new_node);
+					A_free(new_node->key.k.s);
+					A_free(new_node);
 					return 0;
 				}
 			}
@@ -405,8 +406,8 @@ int set(void *key, int key_type, file_offset value, HashTable *tbl)
 				if (strncmp(temp->next->key.k.s, new_node->key.k.s, ++key_len) == 0) {
 					printf("could not insert new node \"%s\"\n", new_node->key.k.s);
 					printf("key already exist. Choose another key value.\n");
-					free(new_node->key.k.s);
-					free(new_node);
+					A_free(new_node->key.k.s);
+					A_free(new_node);
 					return 0;
 				}
 			}
@@ -422,8 +423,8 @@ int set(void *key, int key_type, file_offset value, HashTable *tbl)
 				if (strncmp(temp->key.k.s, new_node->key.k.s, ++key_len) == 0) {
 					printf("could not insert new node \"%s\"\n", new_node->key.k.s);
 					printf("key already exist. Choose another key value.\n");
-					free(new_node->key.k.s);
-					free(new_node);
+					A_free(new_node->key.k.s);
+					A_free(new_node);
 					return 0;
 				}
 			}
@@ -444,14 +445,14 @@ int set(void *key, int key_type, file_offset value, HashTable *tbl)
 				if(tbl->data_map[index]->key.k.n16 == new_node->key.k.n16) {
 					printf("could not insert new node '%u'\n", new_node->key.k.n16);
 					printf("key already exist. Choose another key value.\n");
-					free(new_node);
+					A_free(new_node);
 					return 0;
 				}
 			}else{
 				if (tbl->data_map[index]->key.k.n == new_node->key.k.n) {
 					printf("could not insert new node '%u'\n", new_node->key.k.n);
 					printf("key already exist. Choose another key value.\n");
-					free(new_node);
+					A_free(new_node);
 					return 0;
 				}
 			}
@@ -464,14 +465,14 @@ int set(void *key, int key_type, file_offset value, HashTable *tbl)
 					if(temp->key.k.n16 == new_node->key.k.n16) {
 						printf("could not insert new node '%u'\n", new_node->key.k.n16);
 						printf("key already exist. Choose another key value.\n");
-						free(new_node);
+						A_free(new_node);
 						return 0;
 					}
 				}else{
 					if (temp->key.k.n == new_node->key.k.n) {
 						printf("could not insert new node '%u'\n", new_node->key.k.n);
 						printf("key already exist. Choose another key value.\n");
-						free(new_node);
+						A_free(new_node);
 						return 0;
 					}
 				}
@@ -485,14 +486,14 @@ int set(void *key, int key_type, file_offset value, HashTable *tbl)
 				if(temp->key.k.n16 == new_node->key.k.n16) {
 					printf("could not insert new node '%u'\n", new_node->key.k.n16);
 					printf("key already exist. Choose another key value.\n");
-					free(new_node);
+					A_free(new_node);
 					return 0;
 				}
 			}else{
 				if (temp->key.k.n == new_node->key.k.n) {
 					printf("could not insert new node '%u'\n", new_node->key.k.n);
 					printf("key already exist. Choose another key value.\n");
-					free(new_node);
+					A_free(new_node);
 					return 0;
 				}
 			}
@@ -584,7 +585,7 @@ void free_ht_array(HashTable *ht, int l)
 	for (i = 0; i < l; i++)
 		destroy_hasht(&ht[i]);
 
-	free(ht);
+	A_free(ht);
 }
 void destroy_hasht(HashTable *tbl)
 {
@@ -601,8 +602,8 @@ void destroy_hasht(HashTable *tbl)
 #endif
 			{
 				Node *next = current->next;
-				free(current->key.k.s);
-				free(current);
+				A_free(current->key.k.s);
+				A_free(current);
 				current = next;
 				break;
 			}
@@ -613,7 +614,7 @@ void destroy_hasht(HashTable *tbl)
 #endif
 			{
 				Node *next = current->next;
-				free(current);
+				A_free(current);
 				current = next;
 				break;
 			}
@@ -632,9 +633,9 @@ int keys(HashTable *ht, struct Keys_ht *all_keys)
 
 	if(elements == 0) return NO_ELEMENT;
 
-	struct Key *keys = (struct Key*)malloc(elements * sizeof *keys);
+	struct Key *keys = (struct Key*)A_Malloc(elements * sizeof *keys,M_STATIC,NULL);
 	if (!keys){
-		fprintf(stderr,"malloc failed, %s:%d.\n",F, L - 2);
+		fprintf(stderr,"A_Malloc failed, %s:%d.\n",F, L - 2);
 		return -1;
 	}
 
@@ -732,8 +733,8 @@ void free_nodes(Node **data_map, int size)
 #endif
 			{
 				Node *next = current->next;
-				free(current->key.k.s);
-				free(current);
+				A_free(current->key.k.s);
+				A_free(current);
 				current = next;
 				break;
 			}
@@ -744,7 +745,7 @@ void free_nodes(Node **data_map, int size)
 #endif
 			{
 				Node *next = current->next;
-				free(current);
+				A_free(current);
 				current = next;
 				break;
 			}
@@ -768,7 +769,7 @@ void free_ht_node(Node *node)
 #else
 	case STR:
 #endif
-		free(node->key.k.s);
+		A_free(node->key.k.s);
 		break;
 	
 #if defined(_WIN32)
@@ -782,7 +783,7 @@ void free_ht_node(Node *node)
 		return;
 	}
 
-	free(node);
+	A_free(node);
 }
 
 void free_keys_data(struct Keys_ht *data)
@@ -794,10 +795,10 @@ void free_keys_data(struct Keys_ht *data)
 #else
 		if (data->keys[i].type == STR)
 #endif
-			free(data->keys[i].k.s);
+			A_free(data->keys[i].k.s);
 	}
 
-	free(data->keys);
+	A_free(data->keys);
 }
 
 /*if mode is set to 1 it will overwrite the content of dest
@@ -898,9 +899,9 @@ int swap_indexes(int src,int dest, HashTable *ht)
 			Node *c = ht[src].data_map[i];
 			Node **n = &ht[dest].data_map[i];
 			while(c){
-				*n = malloc(sizeof **n);
+				*n = A_Malloc(sizeof **n,M_STATIC,NULL);
 				if(!(*n)){
-					fprintf(stderr,"malloc failed, %s:%d.\n",__FILE__,__LINE__- 2);
+					fprintf(stderr,"A_Malloc() failed, %s:%d.\n",__FILE__,__LINE__- 2);
 					return -1;
 				}
 				memset(*n,0,sizeof **n);

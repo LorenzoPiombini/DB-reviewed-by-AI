@@ -14,6 +14,7 @@
 #include "debug.h"
 #include "crud.h"
 #include "globals.h"
+#include "allocator.h"
 #include "string_utilities.h"
 #if defined(_WIN32)
 	#include <windows.h>
@@ -65,19 +66,15 @@ unsigned char create_system_from_txt_file(char *txt_f)
 	int i = 0;
 	int size = return_bigger_buffer(fp, &lines);
 	char buffer[size];
-	char **files_n = (char**)malloc(lines * sizeof(char *));
-	char **schemas = (char**)malloc(lines * sizeof(char *));
+	char **files_n = (char**)A_Malloc(lines * sizeof(char *),M_STATIC,NULL);
+	char **schemas = (char**)A_Malloc(lines * sizeof(char *),M_STATIC,NULL);
 	if(!files_n || !schemas){
-		fprintf(stderr,"malloc failed, %s:%d.\n",__FILE__,__LINE__-2);
-		if(files_n)
-			free(files_n);
-		if(schemas)
-			free(schemas);
+		fprintf(stderr,"A_Malloc failed, %s:%d.\n",__FILE__,__LINE__-2);
+		if(files_n) A_free(files_n);
+		if(schemas) A_free(schemas);
 		return 0;
 	}
 
-	memset(files_n,0,lines*sizeof(char*));
-	memset(schemas,0,lines*sizeof(char*));
 	int buckets[lines];
 	int indexes[lines];
 	int file_field[lines];
@@ -230,16 +227,15 @@ int import_data_to_system(char *data_file)
 	file_offset size = ftell(fp);
 	rewind(fp);	
 
-	char *content = (char*)malloc((size+1)*sizeof(char));
+	char *content = (char*)A_Malloc((size+1)*sizeof(char),M_STATIC,NULL);
 	if(!content){
-		fprintf(stderr,"malloc failed, %s:%d.\n",__FILE__,__LINE__-2);
+		fprintf(stderr,"A_Malloc failed, %s:%d.\n",__FILE__,__LINE__-2);
 		return -1;
 	}
 
-	memset(content,0,size+1);
 	if(fread(content,size,1,fp) != 1){
 		fprintf(stderr,"fread() failed, %s:%d.\n",F,L-1);
-		free(content);
+		A_free(content);
 		fclose(fp);
 		return -1;
 	}
@@ -290,11 +286,11 @@ int import_data_to_system(char *data_file)
 		if(buf[0] == '@'){
 			memset(file_name,0,MAX_FILE_PATH_LENGTH);
 			if(open_files(&buf[1],fds,files,0) == -1){
-				free(content);
+				A_free(content);
 				return STATUS_ERROR;
 			}
 			if(is_db_file(&hd,fds) == -1){
-				free(content);
+				A_free(content);
 				return STATUS_ERROR;
 			}
 			strncpy(file_name,&buf[1],strlen(&buf[1]));
@@ -309,14 +305,14 @@ int import_data_to_system(char *data_file)
 				close_file(3,fds[0],fds[1],fds[2]);
 				if(g_ht) free_ht_array(g_ht,g_index);
 				close_ram_file(&ram);
-				free(content);
+				A_free(content);
 				return STATUS_ERROR;
 			}
 
 			if(write_index(fds,g_index,g_ht,files[0]) == -1){
 				close_file(3,fds[0],fds[1],fds[2]);
 				close_ram_file(&ram);
-				free(content);
+				A_free(content);
 				return STATUS_ERROR;
 			}
 
@@ -335,7 +331,7 @@ int import_data_to_system(char *data_file)
 		if(!d){
 			fprintf(stderr,"(%s): delim ':{@' not found, import of '%s' aborted.\n",prog,file_name);
 			close_file(3,fds[0],fds[1],fds[2]);
-			free(content);
+			A_free(content);
 			close_ram_file(&ram);
 			return -1;
 		}
@@ -360,7 +356,7 @@ int import_data_to_system(char *data_file)
 		if(check_data(file_name,cpy,fds,files,&rec,&hd,&lock_f,-1,0) == -1) {
 			printf("key value: %s\n",key);
 			free_record(&rec,rec.fields_num);
-			free(content);
+			A_free(content);
 			close_ram_file(&ram);
 			close_file(3,fds[0],fds[1],fds[2]);
 			return STATUS_ERROR;
@@ -383,7 +379,7 @@ int import_data_to_system(char *data_file)
 		free_record(&rec,rec.fields_num);
 		memset(&rec,0,sizeof(struct Record_f));
 	}
-	free(content);
+	A_free(content);
 	close_ram_file(&ram);
 	__IMPORT_EZ = 0;
 	return 0;

@@ -28,5 +28,6 @@ void A_free(void *m);
 void A_clear_zone(struct Memzone_t *zone);
 void A_change_tag(void *ptr,int tag);
 void *A_Realloc(void *ptr,int size, int tag, void *user);
+void A_close_mainzone(void); /*only for development*/
 
 #endif

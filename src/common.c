@@ -3,6 +3,7 @@
 #include <string.h>
 #include <assert.h>
 #include "common.h"
+#include "allocator.h"
 
 static int BST_node_init(struct BSTnode **node, struct BSTnode **v);
 
@@ -16,11 +17,9 @@ void *array_init(size_t size, int type)
 	case INT:
 #endif
 	{
-		struct Metadata *head = malloc(sizeof(int)*size +sizeof(struct Metadata));
-		if(!head)
-			return NULL;
+		struct Metadata *head = A_Malloc(sizeof(int)*size +sizeof(struct Metadata),M_STATIC,NULL);
+		if(!head) return NULL;
 
-		memset(head,0,sizeof(int)*size+sizeof(struct Metadata));
 		head->capacity = (long long)size;
 		head->elements = (long long) 0;
 		head->type = type;
@@ -32,7 +31,7 @@ void *array_init(size_t size, int type)
 	case LONG:
 #endif
 	{
-		struct Metadata *head = malloc(sizeof(long)*size +sizeof(struct Metadata));
+		struct Metadata *head = A_Malloc(sizeof(long)*size +sizeof(struct Metadata),M_STATIC,NULL);
 		if(!head)
 			return NULL;
 
@@ -49,11 +48,9 @@ void *array_init(size_t size, int type)
 	case BYTE:
 #endif
 	{
-		struct Metadata *head = malloc(sizeof(unsigned char)*size +sizeof(struct Metadata));
-		if(!head)
-			return NULL;
+		struct Metadata *head = A_Malloc(sizeof(unsigned char)*size +sizeof(struct Metadata),M_STATIC,NULL);
+		if(!head) return NULL;
 
-		memset(head,0,sizeof(unsigned char)*size+sizeof(struct Metadata));
 		head->capacity = (long long)size;
 		head->elements = (long long) 0;
 		head->type = type;
@@ -61,11 +58,9 @@ void *array_init(size_t size, int type)
 	}
 	case STRING:
 	{
-		struct Metadata *head = malloc(sizeof(char*)*size +sizeof(struct Metadata));
-		if(!head)
-			return NULL;
+		struct Metadata *head = A_Malloc(sizeof(char*)*size +sizeof(struct Metadata),M_STATIC,NULL);
+		if(!head) return NULL;
 
-		memset(head,0,sizeof(char*)*size+sizeof(struct Metadata));
 		head->capacity = (long long)size;
 		head->elements = (long long) 0;
 		head->type = type;
@@ -77,11 +72,9 @@ void *array_init(size_t size, int type)
 	case DOUBLE:
 #endif
 	{
-		struct Metadata *head = malloc(sizeof(double)*size +sizeof(struct Metadata));
-		if(!head)
-			return NULL;
+		struct Metadata *head = A_Malloc(sizeof(double)*size +sizeof(struct Metadata),M_STATIC,NULL);
+		if(!head) return NULL;
 
-		memset(head,0,sizeof(double)*size+sizeof(struct Metadata));
 		head->capacity = (long long)size;
 		head->elements = (long long) 0;
 		head->type = type;
@@ -93,11 +86,9 @@ void *array_init(size_t size, int type)
 	case FLOAT:
 #endif
 	{
-		struct Metadata *head = malloc(sizeof(float)*size +sizeof(struct Metadata));
-		if(!head)
-			return NULL;
+		struct Metadata *head = A_Malloc(sizeof(float)*size +sizeof(struct Metadata),M_STATIC,NULL);
+		if(!head) return NULL;
 
-		memset(head,0,sizeof(float)*size+sizeof(struct Metadata));
 		head->capacity = (long long)size;
 		head->elements = (long long) 0;
 		head->type = type;
@@ -113,11 +104,9 @@ void *array_init(size_t size, int type)
 #endif
 
 	{
-		struct Metadata *head = malloc(sizeof(struct Mix_t)*size +sizeof(struct Metadata));
-		if(!head)
-			return NULL;
+		struct Metadata *head = A_Malloc(sizeof(struct Mix_t)*size +sizeof(struct Metadata),M_STATIC,NULL);
+		if(!head) return NULL;
 
-		memset(head,0,sizeof(struct Mix_t)*size+sizeof(struct Metadata));
 		head->capacity = (long long)size;
 		head->elements = (long long) 0;
 		head->type = type;
@@ -125,11 +114,9 @@ void *array_init(size_t size, int type)
 	}
 	case USER_DEF:
 	{
-		struct Metadata *head = malloc(sizeof(void *)*size +sizeof(struct Metadata));
-		if(!head)
-			return NULL;
+		struct Metadata *head = A_Malloc(sizeof(void *)*size +sizeof(struct Metadata),M_STATIC,NULL);
+		if(!head) return NULL;
 
-		memset(head,0,sizeof(void)*size+sizeof(struct Metadata));
 		head->capacity = (long long)size;
 		head->elements = (long long) 0;
 		head->type = type;
@@ -143,11 +130,8 @@ void *array_init(size_t size, int type)
 int mix_type_init(int type,struct Mix_t **el, void* value)
 {
 	if(!(*el)){
-		*el = malloc(sizeof(struct Mix_t));
-		if(!(*el)){
-			return -1;
-		}
-		memset(*el,0,sizeof(struct Mix_t));
+		*el = A_Malloc(sizeof(struct Mix_t),M_STATIC,NULL);
+		if(!(*el)) return -1;
 	}
 
 	switch(type){
@@ -158,10 +142,9 @@ int mix_type_init(int type,struct Mix_t **el, void* value)
 #endif
 	{ 
 		(*el)->type = type;
-		(*el)->v = (void*)malloc(sizeof(int));
-		if(!(*el)->v){
-			return -1;
-		}
+		(*el)->v = (void*)A_Malloc(sizeof(int),M_STATIC,NULL);
+		if(!(*el)->v) return -1;
+
 		*(int*)(*el)->v = *(int *)value;	
 		return 0;
 	}
@@ -172,10 +155,9 @@ int mix_type_init(int type,struct Mix_t **el, void* value)
 #endif
 	{
 		(*el)->type = type;
-		(*el)->v = (void*)malloc(sizeof(long));
-		if(!(*el)->v){
-			return -1;
-		}
+		(*el)->v = (void*)A_Malloc(sizeof(long),M_STATIC,NULL);
+		if(!(*el)->v) return -1;
+
 		*(long*)(*el)->v = *(long*)value;	
 		return 0;
 	}
@@ -186,10 +168,9 @@ int mix_type_init(int type,struct Mix_t **el, void* value)
 #endif
 	{
 		(*el)->type = type;
-		(*el)->v = (void*)malloc(sizeof(unsigned char));
-		if(!(*el)->v){
-			return -1;
-		}
+		(*el)->v = (void*)A_Malloc(sizeof(unsigned char),M_STATIC,NULL);
+		if(!(*el)->v) return -1;
+
 		*(unsigned char*)(*el)->v = *(unsigned char*)value;	
 		return 0;
 	}
@@ -200,10 +181,9 @@ int mix_type_init(int type,struct Mix_t **el, void* value)
 #endif
 	{
 		(*el)->type = type;
-		(*el)->v = (void*)malloc(sizeof(float));
-		if(!(*el)->v){
-			return -1;
-		}
+		(*el)->v = (void*)A_Malloc(sizeof(float),M_STATIC,NULL);
+		if(!(*el)->v) return -1;
+
 		*(float*)(*el)->v = *(float*)value;	
 		return 0;
 	}
@@ -214,10 +194,9 @@ int mix_type_init(int type,struct Mix_t **el, void* value)
 #endif
 	{
 		(*el)->type = type;
-		(*el)->v = (void*)malloc(sizeof(double));
-		if(!(*el)->v){
-			return -1;
-		}
+		(*el)->v = (void*)A_Malloc(sizeof(double),M_STATIC,NULL);
+		if(!(*el)->v) return -1;
+
 		*(double*)(*el)->v = *(double*)value;	
 		return 0;
 	}
@@ -225,10 +204,9 @@ int mix_type_init(int type,struct Mix_t **el, void* value)
 	{
 		size_t size = strlen((char*)value);
 		(*el)->type = type;
-		(*el)->v = (void*)malloc(sizeof(char*)*(size+1));
-		if(!(*el)->v){
-			return -1;
-		}
+		(*el)->v = (void*)A_Malloc(sizeof(char*)*(size+1),M_STATIC,NULL);
+		if(!(*el)->v) return -1;
+
 		memcpy((char*)(*el)->v,(char*)value,size);
 		return 0;
 	}
@@ -253,24 +231,22 @@ int array_insert_at(int i, void **arr, void *el)
 	{
 		if(h->capacity <= i){
 			int new_size = (i - h->capacity) + 1;
-			void *n = realloc((struct Metadata*)*arr - 1, (sizeof(long)*(h->capacity + new_size)) + sizeof(struct Metadata));
+			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(long)*(h->capacity + new_size)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
 			*arr = (struct Metadata*) n + 1;
-			memset(&((long*)*arr)[h->capacity],0,sizeof(long) * new_size);
 			h->capacity += new_size;
 		}else {
-			void *n = realloc((struct Metadata*)*arr - 1, (sizeof(long)*(h->capacity + 1)) + sizeof(struct Metadata));
+			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(long)*(h->capacity + 1)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
 			*arr = (struct Metadata*) n + 1;
-			memset(&((long*)*arr)[h->capacity],0,sizeof(long) * 1);
 			h->capacity++;
 		}
 
@@ -297,24 +273,22 @@ int array_insert_at(int i, void **arr, void *el)
 		if(h->capacity <= i){
 			/*realloc*/
 			int new_size = (i - h->capacity) + 1;
-			void *n = realloc((struct Metadata*)*arr - 1, (sizeof(int)*(h->capacity + new_size)) + sizeof(struct Metadata));
+			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(int)*(h->capacity + new_size)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
 			*arr = (struct Metadata*) n + 1;
-			memset(&((int*)*arr)[h->capacity],0,sizeof(int) * new_size);
 			h->capacity += new_size;
 		}else {
-			void *n = realloc((struct Metadata*)*arr - 1, (sizeof(int)*(h->capacity + 1)) + sizeof(struct Metadata));
+			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(int)*(h->capacity + 1)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
 			*arr = (struct Metadata*) n + 1;
-			memset(&((int*)*arr)[h->capacity],0,sizeof(int) * 1);
 			h->capacity++;
 		}
 
@@ -341,24 +315,22 @@ int array_insert_at(int i, void **arr, void *el)
 		if(h->capacity <= i){
 			/*realloc*/
 			int new_size = (i - h->capacity) + 1;
-			void *n = realloc((struct Metadata*)*arr - 1, (sizeof(double)*(h->capacity + new_size)) + sizeof(struct Metadata));
+			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(double)*(h->capacity + new_size)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
 			*arr = (struct Metadata*) n + 1;
-			memset(&((double*)*arr)[h->capacity],0,sizeof(double) * new_size);
 			h->capacity += new_size;
 		}else {
-			void *n = realloc((struct Metadata*)*arr - 1, (sizeof(double)*(h->capacity + 1)) + sizeof(struct Metadata));
+			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(double)*(h->capacity + 1)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
 			*arr = (struct Metadata*) n + 1;
-			memset(&((double*)*arr)[h->capacity],0,sizeof(double) * 1);
 			h->capacity++;
 		}
 
@@ -384,24 +356,22 @@ int array_insert_at(int i, void **arr, void *el)
 		if(h->capacity < i){
 			/*realloc*/
 			int new_size = (i - h->capacity) + 1;
-			void *n = realloc((struct Metadata*)*arr - 1, (sizeof(float)*(h->capacity + new_size)) + sizeof(struct Metadata));
+			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(float)*(h->capacity + new_size)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
 			*arr = (struct Metadata*) n + 1;
-			memset(&((float*)*arr)[h->capacity],0,sizeof(float) * new_size);
 			h->capacity += new_size;
 		}else {
-			void *n = realloc((struct Metadata*)*arr - 1, (sizeof(float)*(h->capacity + 1)) + sizeof(struct Metadata));
+			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(float)*(h->capacity + 1)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
 			*arr = (struct Metadata*) n + 1;
-			memset(&((float*)*arr)[h->capacity],0,sizeof(long) * 1);
 			h->capacity++;
 		}
 
@@ -427,24 +397,22 @@ int array_insert_at(int i, void **arr, void *el)
 		if(h->capacity < i){
 			/*realloc*/
 			int new_size = (i - h->capacity) + 1;
-			void *n = realloc((struct Metadata*)*arr - 1, (sizeof(unsigned char)*(h->capacity + new_size)) + sizeof(struct Metadata));
+			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(unsigned char)*(h->capacity + new_size)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
 			*arr = (struct Metadata*) n + 1;
-			memset(&((unsigned char*)*arr)[h->capacity],0,sizeof(unsigned char) * new_size);
 			h->capacity += new_size;
 		}else {
-			void *n = realloc((struct Metadata*)*arr - 1, (sizeof(unsigned char)*(h->capacity + 1)) + sizeof(struct Metadata));
+			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(unsigned char)*(h->capacity + 1)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
 			*arr = (struct Metadata*) n + 1;
-			memset(&((unsigned char*)*arr)[h->capacity],0,sizeof(unsigned char) * 1);
 			h->capacity++;
 		}
 
@@ -466,24 +434,22 @@ int array_insert_at(int i, void **arr, void *el)
 		if(h->capacity < i){
 			/*realloc*/
 			int new_size = (i - h->capacity) + 1;
-			void *n = realloc((struct Metadata*)*arr - 1, (sizeof(char*)*(h->capacity + new_size)) + sizeof(struct Metadata));
+			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(char*)*(h->capacity + new_size)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
 			*arr = (struct Metadata*) n + 1;
-			memset(&((char**)*arr)[h->capacity],0,sizeof(char*) * new_size);
 			h->capacity += new_size;
 		}else {
-			void *n = realloc((struct Metadata*)*arr - 1, (sizeof(char*)*(h->capacity + 1)) + sizeof(struct Metadata));
+			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(char*)*(h->capacity + 1)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
 			*arr = (struct Metadata*) n + 1;
-			memset(&((char**)*arr)[h->capacity],0,sizeof(char*) * 1);
 			h->capacity++;
 		}
 
@@ -492,16 +458,15 @@ int array_insert_at(int i, void **arr, void *el)
 		for(j= h->capacity -1; j != i; j--){
 			if(a[j-1] && !a[j]){
 				int size = (int) strlen(a[j-1]);
-				a[j] = (char*) malloc(size+1);
-				if(!a[j])
-					return -1;
-				memset(a[j], 0,size+1);
+				a[j] = (char*) A_Malloc(size+1,M_STATIC,NULL);
+				if(!a[j]) return -1;
+
 				strncpy(a[j],a[j-1],size);
-				free(a[j-1]);
+				A_free(a[j-1]);
 				a[j-1] = NULL;
 			}
 		}
-		a[i] = (char*)malloc(strlen((char*)el)+1);
+		a[i] = (char*)A_Malloc(strlen((char*)el)+1,M_STATIC,NULL);
 		a[i][strlen((char*) el)] = '\0';
 		memcpy(a[i],(char*) el,strlen((char*)el));
 		h->elements++;
@@ -517,24 +482,22 @@ int array_insert_at(int i, void **arr, void *el)
 		if(h->capacity < i){
 			/*realloc*/
 			int new_size = (i - h->capacity) + 1;
-			void *n = realloc((struct Metadata*)*arr - 1, (sizeof(struct Mix_t)*(h->capacity + new_size)) + sizeof(struct Metadata));
+			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(struct Mix_t)*(h->capacity + new_size)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
 			*arr = (struct Metadata*) n + 1;
-			memset(&((struct Mix_t*)*arr)[h->capacity],0,sizeof(struct Mix_t) * new_size);
 			h->capacity += new_size;
 		}else {
-			void *n = realloc((struct Metadata*)*arr - 1, (sizeof(struct Mix_t)*(h->capacity + 1)) + sizeof(struct Metadata));
+			void *n = A_Realloc((struct Metadata*)*arr - 1, (sizeof(struct Mix_t)*(h->capacity + 1)) + sizeof(struct Metadata),M_STATIC,NULL);
 			if(!n){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__ -2);
 				return -1;
 			}
 			h = (struct Metadata*)n;
 			*arr = (struct Metadata*) n + 1;
-			memset(&((struct Mix_t*)*arr)[h->capacity],0,sizeof(struct Mix_t) * 1);
 			h->capacity++;
 		}
 
@@ -570,7 +533,7 @@ int array_push(void **arr, void *el)
 	{
 		if(h->elements == h->capacity){
 			/*realloc*/
-			void *r = realloc((struct Metadata*)*arr-1,(sizeof(long)*(h->capacity * 2))+ sizeof(struct Metadata));
+			void *r = A_Realloc((struct Metadata*)*arr-1,(sizeof(long)*(h->capacity * 2))+ sizeof(struct Metadata),M_STATIC,NULL);
 			if(!r){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__);
 				return -1;
@@ -578,13 +541,12 @@ int array_push(void **arr, void *el)
 			h = (struct Metadata*)r;
 			/*zeroed out the new alloc*/
 			*arr = (struct Metadata*) r + 1;
-			memset(&((long*)*arr)[h->capacity],0,sizeof(long) * h->capacity);
 			h->capacity = h->capacity * 2;
 		}
-			long *a = (long*)*arr;
-			a[h->elements] = *(long*)el;
-			*arr = (void*)a;
-			h->elements++;
+		long *a = (long*)*arr;
+		a[h->elements] = *(long*)el;
+		*arr = (void*)a;
+		h->elements++;
 		return 0;
 	}
 #if defined(_WIN32)
@@ -595,14 +557,13 @@ int array_push(void **arr, void *el)
 	{
 		if(h->elements == h->capacity){
 			/*realloc*/
-			void *r = realloc((struct Metadata*)*arr-1,(sizeof(int)*(h->capacity * 2))+ sizeof(struct Metadata));
+			void *r = A_Realloc((struct Metadata*)*arr-1,(sizeof(int)*(h->capacity * 2))+ sizeof(struct Metadata),M_STATIC,NULL);
 			if(!r){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__);
 				return -1;
 			}
 			h = (struct Metadata*)r;
 			*arr = (struct Metadata*)r + 1;
-			memset(&((int*)*arr)[h->capacity],0,sizeof(int) * h->capacity);
 			h->capacity = h->capacity * 2;
 		}
 		int *a = (int*)arr;
@@ -619,14 +580,13 @@ int array_push(void **arr, void *el)
 	{
 		if(h->elements == h->capacity){
 			/*realloc*/
-			void *r = realloc((struct Metadata*)*arr-1,(sizeof(double)*(h->capacity * 2))+ sizeof(struct Metadata));
+			void *r = A_Realloc((struct Metadata*)*arr-1,(sizeof(double)*(h->capacity * 2))+ sizeof(struct Metadata),M_STATIC,NULL);
 			if(!r){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__);
 				return -1;
 			}
 			h = (struct Metadata*)r;
 			*arr = (struct Metadata*)r + 1;
-			memset(&((double*)*arr)[h->capacity],0,sizeof(double) * h->capacity);
 			h->capacity = h->capacity * 2;
 
 		}
@@ -644,14 +604,13 @@ int array_push(void **arr, void *el)
 	{
 		if(h->elements == h->capacity){
 			/*realloc*/
-			void *r = realloc((struct Metadata*)*arr-1,(sizeof(float)*(h->capacity * 2))+ sizeof(struct Metadata));
+			void *r = A_Realloc((struct Metadata*)*arr-1,(sizeof(float)*(h->capacity * 2))+ sizeof(struct Metadata),M_STATIC,NULL);
 			if(!r){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__);
 				return -1;
 			}
 			h = (struct Metadata*)r;
 			*arr = (struct Metadata*)r + 1;
-			memset(&((float*)*arr)[h->capacity],0,sizeof(float) * h->capacity);
 			h->capacity = h->capacity * 2;
 		}
 		float *a = (float*)*arr;
@@ -668,7 +627,7 @@ int array_push(void **arr, void *el)
 	{
 		if(h->elements == h->capacity){
 			/*realloc*/
-			void *r = realloc((struct Metadata*)*arr-1,(sizeof(unsigned char)*(h->capacity * 2))+ sizeof(struct Metadata));
+			void *r = A_Realloc((struct Metadata*)*arr-1,(sizeof(unsigned char)*(h->capacity * 2))+ sizeof(struct Metadata),M_STATIC,NULL);
 			if(!r){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__);
 				return -1;
@@ -676,7 +635,6 @@ int array_push(void **arr, void *el)
 			h = (struct Metadata*)r;
 			h->capacity = h->capacity * 2;
 			*arr = (struct Metadata*)r + 1;
-			memset(&((unsigned char*)*arr)[h->capacity],0,sizeof(unsigned char) * h->capacity);
 		}
 		unsigned char *a = (unsigned char*)*arr;
 		a[h->elements] = *(unsigned char*)el;
@@ -688,7 +646,7 @@ int array_push(void **arr, void *el)
 	{
 		if(h->elements == h->capacity){
 			/*realloc*/
-			void *r = realloc((struct Metadata*)*arr-1,(sizeof(char*)*(h->capacity * 2))+ sizeof(struct Metadata));
+			void *r = A_Realloc((struct Metadata*)*arr-1,(sizeof(char*)*(h->capacity * 2))+ sizeof(struct Metadata),M_STATIC,NULL);
 			if(!r){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__);
 				return -1;
@@ -696,10 +654,9 @@ int array_push(void **arr, void *el)
 			h = (struct Metadata*)r;
 			h->capacity = h->capacity * 2;
 			*arr = (struct Metadata*)r + 1;
-			memset(&((char**)*arr)[h->capacity],0,sizeof(char*) * h->capacity);
 		}
 		char **a = (char **)*arr;
-		a[h->elements] = (char*)malloc(strlen((char*)el)+1);
+		a[h->elements] = (char*)A_Malloc(strlen((char*)el)+1,M_STATIC,NULL);
 		a[h->elements][strlen((char*) el)] = '\0';
 		memcpy(a[h->elements],(char*) el,strlen((char*)el));
 		h->elements++;
@@ -714,7 +671,7 @@ int array_push(void **arr, void *el)
 	{
 		if(h->elements == h->capacity){
 			/*realloc*/
-			void *r = realloc((struct Metadata*)*arr-1,(sizeof(struct Mix_t)*(h->capacity * 2))+ sizeof(struct Metadata));
+			void *r = A_Realloc((struct Metadata*)*arr-1,(sizeof(struct Mix_t)*(h->capacity * 2))+ sizeof(struct Metadata),M_STATIC,NULL);
 			if(!r){
 				fprintf(stderr,"realloc() failed. %s:%d\n",__FILE__,__LINE__);
 				return -1;
@@ -722,7 +679,6 @@ int array_push(void **arr, void *el)
 			h = (struct Metadata*)r;
 			h->capacity = h->capacity * 2;
 			*arr = (struct Metadata*)r + 1;
-			memset(&((struct Mix_t*)*arr)[h->capacity],0,sizeof(struct Mix_t) * h->capacity);
 		}
 		struct Mix_t *a = (struct Mix_t*)*arr;
 		a[h->elements] = *(struct Mix_t*)el;
@@ -755,7 +711,7 @@ void array_free(void*arr)
 	case FLOAT:
 	case BYTE:
 #endif
-		free(h);
+		A_free(h);
 		return;
 	case STRING:
 	{
@@ -763,9 +719,9 @@ void array_free(void*arr)
 		int i;
 		for(i = 0; i < h->capacity; i++){
 			if(c[i])
-				free(c[i]);
+				A_free(c[i]);
 		}
-		free(h);
+		A_free(h);
 		return;
 	}
 #if defined(_WIN32)
@@ -778,9 +734,9 @@ void array_free(void*arr)
 		int i;
 		for(i = 0; i < h->capacity; i++){
 			if(v[i].v)
-				free(v[i].v);
+				A_free(v[i].v);
 		}
-		free(h);
+		A_free(h);
 		return;
 	}
 	default:
@@ -790,16 +746,11 @@ void array_free(void*arr)
 
 static int BST_node_init(struct BSTnode **node, struct BSTnode **v)
 {
-	*node = malloc(sizeof **node);
-	if(!(*node)){
-		return -1;
-	}
-	memset(*node,0,sizeof(**node));
-	(*node)->value = malloc(sizeof(struct Mix_t));
-	if(!(*node)->value){
-		return -1;
-	}
-	memset((*node)->value,0,sizeof(struct Mix_t));
+	*node = A_Malloc(sizeof **node,M_STATIC,NULL);
+	if(!(*node)) return -1;
+
+	(*node)->value = A_Malloc(sizeof(struct Mix_t),M_STATIC,NULL);
+	if(!(*node)->value) return -1;
 
 	struct Mix_t* node_value = (struct Mix_t*)(*node)->value;
 	if(mix_type_init((int)((struct Mix_t*)(*v)->value)->type,

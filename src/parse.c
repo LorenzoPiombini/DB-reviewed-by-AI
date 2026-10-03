@@ -18,6 +18,7 @@
 #include "date.h"
 #include "hash_tbl.h"
 #include "crud.h"
+#include "allocator.h"
 
 static char prog[] = "db";
 static int schema_check_type(int count,
@@ -465,9 +466,9 @@ static int write_hd_VS1(ui8 **buf, long *bwritten, struct Schema **sch)
 	ui16 i = 0;
 	for (i = 0; i < (*sch)->fields_num; i++) {
 		if(*bwritten +(sizeof(ui8)*2 + sizeof(ui32)*2 + 32) > EIGTH_Kib){
-			ui8* n = realloc(*buf,msize + EIGTH_Kib);
+			ui8* n = A_Realloc(*buf,msize + EIGTH_Kib,M_STATIC,NULL);
 			if(!n){
-				fprintf(stderr,"realloc() failed, %s:%d.\n",__FILE__,__LINE__ - 2);
+				fprintf(stderr,"A_Realloc() failed, %s:%d.\n",__FILE__,__LINE__ - 2);
 				return -1;
 			}
 
@@ -586,9 +587,9 @@ int write_header(file_t fd, struct Header_d *hd)
 	const unsigned long EIGTH_Kib = 1024 * 8;
 	unsigned long msize = EIGTH_Kib;
 	long bwritten = 0;
-	ui8* buf = (ui8*) malloc(msize+1+sizeof(unsigned long));
+	ui8* buf = (ui8*) A_Malloc(msize+1+sizeof(unsigned long),M_STATIC,NULL);
 	if(!buf){
-		fprintf(stderr,"malloc() failed, %s:%d.\n",__FILE__,__LINE__ - 2);
+		fprintf(stderr,"A_Malloc() failed, %s:%d.\n",__FILE__,__LINE__ - 2);
 		return 0;
 	}
 
@@ -631,7 +632,7 @@ int write_header(file_t fd, struct Header_d *hd)
 	}
 
 	buf -= sizeof(unsigned long);
-	free(buf);
+	A_free(buf);
 	return 1; /* succssed */
 }
 
@@ -648,34 +649,28 @@ static int read_hd_V1(ui8 **buf, long *bread, struct Schema **sch)
 	}
 
 
-	(*sch)->fields_name = (char**)malloc(sizeof(char*) * (*sch)->fields_num);
-	(*sch)->types = (int*)malloc(sizeof(int) * (*sch)->fields_num);
-	(*sch)->is_dropped = (ui8*)malloc((*sch)->fields_num);
-	(*sch)->constraints = (ui8*)malloc((*sch)->fields_num);
-	(*sch)->defaults = (void**)malloc((*sch)->fields_num*sizeof(void*));
-
-	memset((*sch)->fields_name,0,sizeof(char*)*(*sch)->fields_num);
-	memset((*sch)->types,-1,sizeof(int) * (*sch)->fields_num);
-	memset((*sch)->is_dropped,0,(*sch)->fields_num);
-	memset((*sch)->constraints,0,(*sch)->fields_num);
-	memset((*sch)->defaults,0,(*sch)->fields_num*sizeof(void*));
+	(*sch)->fields_name = 	(char**) A_Malloc(sizeof(char*) * (*sch)->fields_num,M_STATIC,NULL);
+	(*sch)->types = 		(int*)	 A_Malloc(sizeof(int) * (*sch)->fields_num,M_STATIC,NULL);
+	(*sch)->is_dropped = 	(ui8*)	 A_Malloc((*sch)->fields_num,M_STATIC,NULL);
+	(*sch)->constraints = 	(ui8*)	 A_Malloc((*sch)->fields_num,M_STATIC,NULL);
+	(*sch)->defaults = 		(void**) A_Malloc((*sch)->fields_num*sizeof(void*),M_STATIC,NULL);
 
 	if(!(*sch)->fields_name
 			|| !(*sch)->types 
 			|| !(*sch)->is_dropped
 			|| !(*sch)->constraints
 			|| !(*sch)->defaults){
-		fprintf(stderr,"malloc failed %s:%d.\n",__FILE__,__LINE__-4);
+		fprintf(stderr,"A_Malloc failed %s:%d.\n",__FILE__,__LINE__-4);
 		if((*sch)->fields_name) 
-			free((*sch)->fields_name);
+			A_free((*sch)->fields_name);
 		if((*sch)->types)
-			free((*sch)->types);
+			A_free((*sch)->types);
 		if((*sch)->is_dropped)
-			free((*sch)->is_dropped);
+			A_free((*sch)->is_dropped);
 		if((*sch)->constraints)
-			free((*sch)->constraints);
+			A_free((*sch)->constraints);
 		if((*sch)->defaults)
-			free((*sch)->defaults);
+			A_free((*sch)->defaults);
 		return -1;
 	} 
 
@@ -687,9 +682,9 @@ static int read_hd_V1(ui8 **buf, long *bread, struct Schema **sch)
 
 		size_t l = (size_t)swap32(l_end);
 
-		(*sch)->fields_name[i] = (char*)malloc(l);
+		(*sch)->fields_name[i] = (char*)A_Malloc(l,M_STATIC,NULL);
 		if(!(*sch)->fields_name[i]){
-			fprintf(stderr,"malloc failed %s:%d.\n",__FILE__,__LINE__-1);
+			fprintf(stderr,"A_Malloc failed %s:%d.\n",__FILE__,__LINE__-1);
 			free_schema(*sch);
 			return -1;
 		} 
@@ -719,9 +714,9 @@ static int read_hd_V1(ui8 **buf, long *bread, struct Schema **sch)
 				*bread += sizeof(int);
 
 				n = swap32(n);
-				(*sch)->defaults[i] = (void*) malloc(sizeof(int));
+				(*sch)->defaults[i] = (void*) A_Malloc(sizeof(int),M_STATIC,NULL);
 				if(!(*sch)->defaults[i]){
-					fprintf(stderr,"malloc failed %s:%d.\n",__FILE__,__LINE__-1);
+					fprintf(stderr,"A_Malloc failed %s:%d.\n",__FILE__,__LINE__-1);
 					free_schema(*sch);
 					return -1;
 				}
@@ -736,9 +731,9 @@ static int read_hd_V1(ui8 **buf, long *bread, struct Schema **sch)
 
 				n = swap64(n);
 
-				(*sch)->defaults[i] = (void*) malloc(sizeof(long));
+				(*sch)->defaults[i] = (void*) A_Malloc(sizeof(long),M_STATIC,NULL);
 				if(!(*sch)->defaults[i]){
-					fprintf(stderr,"malloc failed %s:%d.\n",__FILE__,__LINE__-1);
+					fprintf(stderr,"A_Malloc failed %s:%d.\n",__FILE__,__LINE__-1);
 					free_schema(*sch);
 					return -1;
 				}
@@ -751,15 +746,14 @@ static int read_hd_V1(ui8 **buf, long *bread, struct Schema **sch)
 				memcpy(&n,&(*buf)[*bread],sizeof(ui8));
 				*bread += sizeof(ui8);
 
-				(*sch)->defaults[i] = (void*) malloc(sizeof(ui8));
+				(*sch)->defaults[i] = (void*) A_Malloc(sizeof(ui8),M_STATIC,NULL);
 				if(!(*sch)->defaults[i]){
-					fprintf(stderr,"malloc failed %s:%d.\n",__FILE__,__LINE__-1);
+					fprintf(stderr,"A_Malloc failed %s:%d.\n",__FILE__,__LINE__-1);
 					free_schema(*sch);
 					return -1;
 				}
 				*(ui8*)(*sch)->defaults[i] = n;
 				break;
-
 			}
 			case TYPE_KEY:
 			case TYPE_DATE:
@@ -769,15 +763,14 @@ static int read_hd_V1(ui8 **buf, long *bread, struct Schema **sch)
 				*bread += sizeof(ui32);
 
 				n = swap32(n);
-				(*sch)->defaults[i] = (void*) malloc(sizeof(ui32));
+				(*sch)->defaults[i] = (void*) A_Malloc(sizeof(ui32),M_STATIC,NULL);
 				if(!(*sch)->defaults[i]){
-					fprintf(stderr,"malloc failed %s:%d.\n",__FILE__,__LINE__-1);
+					fprintf(stderr,"A_Malloc failed %s:%d.\n",__FILE__,__LINE__-1);
 					free_schema(*sch);
 					return -1;
 				}
 				*(ui32*)(*sch)->defaults[i] = n;
 				break;
-
 			}
 			case TYPE_FLOAT:
 			{
@@ -787,9 +780,9 @@ static int read_hd_V1(ui8 **buf, long *bread, struct Schema **sch)
 
 				float f = ntohf(fne);
 
-				(*sch)->defaults[i] = (void*) malloc(sizeof(float));
+				(*sch)->defaults[i] = (void*) A_Malloc(sizeof(float),M_STATIC,NULL);
 				if(!(*sch)->defaults[i]){
-					fprintf(stderr,"malloc failed %s:%d.\n",__FILE__,__LINE__-1);
+					fprintf(stderr,"A_Malloc failed %s:%d.\n",__FILE__,__LINE__-1);
 					free_schema(*sch);
 					return -1;
 				}
@@ -804,9 +797,9 @@ static int read_hd_V1(ui8 **buf, long *bread, struct Schema **sch)
 
 				double d = ntohd(f);
 
-				(*sch)->defaults[i] = (void*) malloc(sizeof(double));
+				(*sch)->defaults[i] = (void*) A_Malloc(sizeof(double),M_STATIC,NULL);
 				if(!(*sch)->defaults[i]){
-					fprintf(stderr,"malloc failed %s:%d.\n",__FILE__,__LINE__-1);
+					fprintf(stderr,"A_Malloc failed %s:%d.\n",__FILE__,__LINE__-1);
 					free_schema(*sch);
 					return -1;
 				}
@@ -842,9 +835,9 @@ static int read_hd_V1(ui8 **buf, long *bread, struct Schema **sch)
 		}
 
 		if((*sch)->constraints[i] & CONST_UNIQUE){
-			(*sch)->defaults[i] = malloc(sizeof(int));
+			(*sch)->defaults[i] = A_Malloc(sizeof(int),M_STATIC,NULL);
 			if(!(*sch)->defaults[i]){
-				fprintf(stderr,"malloc() failed %s:%d.\n",__FILE__,__LINE__-2);
+				fprintf(stderr,"A_Malloc() failed %s:%d.\n",__FILE__,__LINE__-2);
 				free_schema(*sch);
 				return -1;
 			}
@@ -866,16 +859,16 @@ int read_header(file_t fd, struct Header_d *hd)
 		return 0;
 
 	long bread = 0;
-	ui8* buf = (ui8*) malloc(msize);
+	ui8* buf = (ui8*) A_Malloc(msize,M_STATIC,NULL);
 	if(!buf){
-		fprintf(stderr,"malloc() failed, %s:%d.\n",__FILE__,__LINE__ - 2);
+		fprintf(stderr,"A_Malloc() failed, %s:%d.\n",__FILE__,__LINE__ - 2);
 		return 0;
 	}
 
 	if (os_read(fd, buf, msize) == -1){
 		perror("reading header.\n");
 		printf("parse.c %s:%d.\n",__FILE__, __LINE__ - 2);
-		free(buf);
+		A_free(buf);
 		return 0;
 	}
 
@@ -899,19 +892,19 @@ int read_header(file_t fd, struct Header_d *hd)
 	switch(hd->version){
 	case VS:
 		if(read_hd_V1(&buf,&bread,&hd->sch_d) == -1){
-			free(buf);
+			A_free(buf);
 			return 0;
 		}
 		break;
 	default:
 		printf("this file was edited from a different software.\n");
-		free(buf);
+		A_free(buf);
 		return 0;
 	}
 		
 
 	hd->sch_d->has_unique = has_constrain_unique;
-	free(buf);
+	A_free(buf);
 	return 1; /* successed */
 }
 
@@ -1097,9 +1090,9 @@ int sort_input_like_header_schema(int schema_tp,
 
 	if(schema_tp == SCHEMA_CT || schema_tp == SCHEMA_CT_NT){
 		/*order the data with missing fields*/
-		char **n_v = (char**)realloc(*values,sch->fields_num * sizeof(char*));
+		char **n_v = (char**)A_Realloc(*values,sch->fields_num * sizeof(char*),M_STATIC,NULL);
 		if(!n_v){
-			fprintf(stderr,"realloc() failed %s:%d.\n",__FILE__,__LINE__-2);
+			fprintf(stderr,"A_Realloc() failed %s:%d.\n",__FILE__,__LINE__-2);
 			return -1;
 		}
 
@@ -1121,7 +1114,7 @@ int sort_input_like_header_schema(int schema_tp,
 			}
 		}
 
-		char **temp_val = (char**)malloc(sch->fields_num * sizeof(char *));
+		char **temp_val = (char**)A_Malloc(sch->fields_num * sizeof(char *),M_STATIC,NULL);
 		if (!temp_val) {
 			fprintf(stderr,"(%s): ask_m failed, %s:%d.\n",prog,__FILE__,__LINE__-2);
 			return 0;
@@ -1153,7 +1146,7 @@ int sort_input_like_header_schema(int schema_tp,
 			types_i[i] = temp_types[i];
 		}
 
-		free(temp_val);
+		A_free(temp_val);
 		return 1;
 
 	}
@@ -1177,13 +1170,12 @@ int sort_input_like_header_schema(int schema_tp,
 
 
 
-	char **temp_val = (char**)malloc(fields_num * sizeof(char *));
+	char **temp_val = (char**)A_Malloc(fields_num * sizeof(char *),M_STATIC,NULL);
 	if (!temp_val) {
-		fprintf(stderr,"malloc() failed, %s:%d.\n",__FILE__,__LINE__-2);
+		fprintf(stderr,"A_Malloc() failed, %s:%d.\n",__FILE__,__LINE__-2);
 		return 0;
 	}
 
-	memset(temp_val,0,sizeof(char*)*fields_num);
 	char temp_name[MAX_FIELD_NR][MAX_FIELD_LT] = {0}; 
 
 	int temp_types[MAX_FIELD_NR];
@@ -1205,7 +1197,7 @@ int sort_input_like_header_schema(int schema_tp,
 		types_i[i] = temp_types[i];
 	}
 
-	free(temp_val);
+	A_free(temp_val);
 	return 1;
 }
 
@@ -1339,9 +1331,9 @@ unsigned char add_fields_to_schema(int mode, int fields_num, char *buffer, struc
 
 	assert((fields_num - count) > 0);
 	int number_new_field = fields_num - count;
-	char **new_fields = (char**) realloc(sch->fields_name, (sch->fields_num + number_new_field)*sizeof(char*));
+	char **new_fields = (char**) A_Realloc(sch->fields_name, (sch->fields_num + number_new_field)*sizeof(char*),M_STATIC,NULL);
 	if(!new_fields){
-		fprintf(stderr,"realloc failed, %s:%d.\n",__FILE__,__LINE__-2);
+		fprintf(stderr,"A_Realloc failed, %s:%d.\n",__FILE__,__LINE__-2);
 		array_free(constraints);
 		array_free(def_values);
 		return 0;
@@ -1350,10 +1342,10 @@ unsigned char add_fields_to_schema(int mode, int fields_num, char *buffer, struc
 	sch->fields_name = new_fields;
 	memset(&sch->fields_name[sch->fields_num],0,number_new_field);
 
-	int *types = (int*) realloc(sch->types,
-			(sch->fields_num + number_new_field) * sizeof(int));
+	int *types = (int*) A_Realloc(sch->types,
+			(sch->fields_num + number_new_field) * sizeof(int),M_STATIC,NULL);
 	if(!types){
-		fprintf(stderr,"realloc() failed, %s:%d.\n",__FILE__,__LINE__-2);
+		fprintf(stderr,"A_Realloc() failed, %s:%d.\n",__FILE__,__LINE__-2);
 		array_free(constraints);
 		array_free(def_values);
 		return 0;
@@ -1361,9 +1353,9 @@ unsigned char add_fields_to_schema(int mode, int fields_num, char *buffer, struc
 	sch->types = types;
 	memset(&sch->types[sch->fields_num],-1,number_new_field);
 
-	ui8 *nd = (ui8*) realloc(sch->is_dropped,(sch->fields_num + number_new_field));
+	ui8 *nd = (ui8*) A_Realloc(sch->is_dropped,(sch->fields_num + number_new_field),M_STATIC,NULL);
 	if(!nd){
-		fprintf(stderr,"realloc() failed, %s:%d.\n",__FILE__,__LINE__-2);
+		fprintf(stderr,"A_Realloc() failed, %s:%d.\n",__FILE__,__LINE__-2);
 		array_free(constraints);
 		array_free(def_values);
 		return 0;
@@ -1371,9 +1363,9 @@ unsigned char add_fields_to_schema(int mode, int fields_num, char *buffer, struc
 
 	sch->is_dropped = nd;
 	memset(&sch->is_dropped[sch->fields_num],0,number_new_field);
-	ui8* nc = realloc(sch->constraints,sch->fields_num + number_new_field);
+	ui8* nc = A_Realloc(sch->constraints,sch->fields_num + number_new_field,M_STATIC,NULL);
 	if(!nc){
-		fprintf(stderr,"realloc() failed, %s:%d.\n",__FILE__,__LINE__-2);
+		fprintf(stderr,"A_Realloc() failed, %s:%d.\n",__FILE__,__LINE__-2);
 		array_free(constraints);
 		array_free(def_values);
 		return 0;
@@ -1381,9 +1373,9 @@ unsigned char add_fields_to_schema(int mode, int fields_num, char *buffer, struc
 	sch->constraints  = nc;
 	memset(&sch->constraints[sch->fields_num],0,number_new_field);
 
-	void** ndf = realloc(sch->defaults,(sch->fields_num+number_new_field) * sizeof(void*));
+	void** ndf = A_Realloc(sch->defaults,(sch->fields_num+number_new_field) * sizeof(void*),M_STATIC,NULL);
 	if(!ndf){
-		fprintf(stderr,"realloc() failed, %s:%d.\n",__FILE__,__LINE__-2);
+		fprintf(stderr,"A_Realloc() failed, %s:%d.\n",__FILE__,__LINE__-2);
 		array_free(constraints);
 		array_free(def_values);
 		return 0;
@@ -1396,9 +1388,9 @@ unsigned char add_fields_to_schema(int mode, int fields_num, char *buffer, struc
 		if(names[i][0] == '\0')
 			continue;
 
-		sch->fields_name[sch->fields_num] = (char*) malloc(strlen(names[i])+1);
+		sch->fields_name[sch->fields_num] = (char*) A_Malloc(strlen(names[i])+1,M_STATIC,NULL);
 		if(!sch->fields_name[sch->fields_num]){
-			fprintf(stderr," malloc() failed, %s:%d.\n",__FILE__,__LINE__-2);
+			fprintf(stderr," A_Malloc() failed, %s:%d.\n",__FILE__,__LINE__-2);
 			array_free(constraints);
 			array_free(def_values);
 			return 0;
@@ -3043,10 +3035,10 @@ unsigned char compare_old_rec_update_rec(struct Record_f **rec_old,
 				if(option == AAR){
 					size_t n_size = rec_old[0]->fields[j].data.file.count + rec->fields[j].data.file.count;
 
-					struct Record_f *n_recs = (struct Record_f*)realloc(rec_old[0]->fields[j].data.file.recs,
-							n_size * sizeof(struct Record_f));
+					struct Record_f *n_recs = (struct Record_f*)A_Realloc(rec_old[0]->fields[j].data.file.recs,
+							n_size * sizeof(struct Record_f),M_STATIC,NULL);
 					if(!n_recs){
-						fprintf(stderr,"realloc failed, %s:%d.\n",__FILE__,__LINE__ - 4);
+						fprintf(stderr,"A_Realloc failed, %s:%d.\n",__FILE__,__LINE__ - 4);
 						return -1;
 					}
 
@@ -3073,10 +3065,10 @@ unsigned char compare_old_rec_update_rec(struct Record_f **rec_old,
 							rec_old[0]->fields[j].data.file.count*sizeof(struct Record_f));
 
 					size_t n_size = rec->fields[j].data.file.count;
-					struct Record_f* new_recs = (struct Record_f*)realloc(rec_old[0]->fields[j].data.file.recs,
-							n_size * sizeof *new_recs);
+					struct Record_f* new_recs = (struct Record_f*)A_Realloc(rec_old[0]->fields[j].data.file.recs,
+							n_size * sizeof *new_recs,M_STATIC,NULL);
 					if(!new_recs){
-						fprintf(stderr,"realloc() failed %s:%d.\n",__FILE__,__LINE__-4);
+						fprintf(stderr,"A_Realloc() failed %s:%d.\n",__FILE__,__LINE__-4);
 						return 0;
 					}
 
@@ -3185,12 +3177,11 @@ unsigned char compare_old_rec_update_rec(struct Record_f **rec_old,
 							rec_old[0]->fields[i].data.s = NULL;
 						}
 						size_t l = strlen(rec->fields[i].data.s);
-						rec_old[0]->fields[i].data.s = (char *) malloc(l+1);
+						rec_old[0]->fields[i].data.s = (char *) A_Malloc(l+1,M_STATIC,NULL);
 						if(!rec_old[0]->fields[i].data.s){
-							fprintf(stderr,"malloc() failed, %s:%d.\n",__FILE__,__LINE__-2);
+							fprintf(stderr,"A_Malloc() failed, %s:%d.\n",__FILE__,__LINE__-2);
 							return 0;
 						}
-						memset(rec_old[0]->fields[i].data.s,0,l+1);
 						strncpy(rec_old[0]->fields[i].data.s,rec->fields[i].data.s,l);
 						changed = 1;
 						rec->field_set[i] = 0;
@@ -4036,17 +4027,16 @@ void find_fields_to_update(
 														|| strncmp(nr->fields[x].data.s,or->fields[x].data.s,sz) != 0){
 
 													free(or->fields[x].data.s);
-													or->fields[x].data.s = (char *)malloc(sz+1);
+													or->fields[x].data.s = (char *)A_Malloc(sz+1,M_STATIC,NULL);
 													if(!or->fields[x].data.s){
-														fprintf(stderr,"malloc() failed, %s:%d.\n",__FILE__,__LINE__ - 2);
+														fprintf(stderr,"A_Malloc() failed, %s:%d.\n",__FILE__,__LINE__ - 2);
 														free_schema(hd.sch_d);
 														positions[0] = '0';
 														return;
 													}
 
-													memset(or->fields[x].data.s,0,sz+1);
 													if(!or->fields[x].data.s){
-														fprintf(stderr,"malloc() failed, %s:%d.\n",__FILE__,__LINE__ - 2);
+														fprintf(stderr,"A_Malloc() failed, %s:%d.\n",__FILE__,__LINE__ - 2);
 														free_schema(hd.sch_d);
 														positions[0] = '0';
 													}	

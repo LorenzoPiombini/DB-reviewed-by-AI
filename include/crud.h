@@ -1,8 +1,6 @@
 #ifndef _CRUD_H_
 #define _CRUD_H_
 
-#include <stddef.h>
-
 #define ONLY_SCHEMA 1
 #define ONLY_INDEX 2
 #define CREATE_FILE 3
@@ -18,16 +16,6 @@
 #include "str_op.h"
 #include "file.h"
 
-
-/* Durable worker API. Called only by the single worker thread. */
-struct Cache;
-int db_durable_open(const char *database_directory);
-void db_durable_close(void);
-int db_durable_active(void);
-int db_durable_failed(void);
-void db_durable_request(int active);
-int db_durable_in_request(void);
-int db_durable_commit(struct Cache *caches, int count);
 
 extern HashTable *g_ht;
 extern int g_index;

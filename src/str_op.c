@@ -11,6 +11,7 @@
 #include "common.h"
 #include "globals.h"
 #include "debug.h"
+#include "allocator.h"
 
 static char prog[] = "db";
 static char *strstr_last(char *src, char delim);
@@ -1277,9 +1278,9 @@ void *key_converter(char *key, int *key_type)
 			return 0x0;
 		}
 
-		converted = (ui32*)malloc(sizeof(ui32));
+		converted = (ui32*)A_Malloc(sizeof(ui32),M_STATIC,NULL);
 		if (!converted) {
-			fprintf(stderr,"malloc failed, %s:%d.\n",F, L - 2);
+			fprintf(stderr,"A_Malloc failed, %s:%d.\n",F, L - 2);
 			return 0x0;
 		}
 
@@ -2188,9 +2189,9 @@ int get_values_hyb(char *buff,char ***values,  int fields_count)
 	memset(cbuff,0,size);
 	strncpy(cbuff,buff,size);
 
-	*values = (char**)malloc(fields_count * sizeof(char *));
+	*values = (char**)A_Malloc(fields_count * sizeof(char *),M_STATIC,NULL);
 	if (!(*values)) {
-		fprintf(stderr,"malloc() failed, %s:%d.\n",F,L-2);
+		fprintf(stderr,"A_Malloc() failed, %s:%d.\n",F,L-2);
 		return -1;
 	}
 
@@ -2253,7 +2254,7 @@ int get_values_hyb(char *buff,char ***values,  int fields_count)
 				if(!(*values)[i]){
 					fprintf(stderr,"duplicate_str() failed, %s:%d\n",__FILE__,__LINE__-2);
 					if(i == 0)
-						free(*values);
+						A_free(*values);
 					else
 						free_strs(i,1,values);
 
@@ -2276,7 +2277,7 @@ int get_values_hyb(char *buff,char ***values,  int fields_count)
 			if(!(*values)[i]){
 				fprintf(stderr,"duplicate_str() failed, %s:%d\n",__FILE__,__LINE__-2);
 				if(i == 0)
-					free(*values);
+					A_free(*values);
 				else
 					free_strs(i,1,values);
 				return -1;
@@ -2312,7 +2313,7 @@ int get_values_hyb(char *buff,char ***values,  int fields_count)
 				if(!(*values)[i]){
 					fprintf(stderr,"duplicate_str() failed, %s:%d\n",__FILE__,__LINE__-2);
 					if(i == 0)
-						free(*values);
+						A_free(*values);
 					else
 						free_strs(i,1,values);
 
@@ -2336,7 +2337,7 @@ int get_values_hyb(char *buff,char ***values,  int fields_count)
 			if(!(*values)[i]){
 				fprintf(stderr,"duplicate_str() failed, %s:%d\n",__FILE__,__LINE__-2);
 				if(i == 0)
-					free(*values);
+					A_free(*values);
 				else
 					free_strs(i,1,values);
 
@@ -2363,7 +2364,7 @@ int get_values_hyb(char *buff,char ***values,  int fields_count)
 				if(!(*values)[i]){
 					fprintf(stderr,"duplicate_str() failed, %s:%d\n",__FILE__,__LINE__-2);
 					if(i == 0)
-						free(*values);
+						A_free(*values);
 					else
 						free_strs(i,1,values);
 
@@ -2405,7 +2406,7 @@ char ** get_values_with_no_types(char *buff,int fields_count)
 	char *first = 0x0;
 	char *last = 0x0;
 
-	char **values = (char**)malloc(fields_count * sizeof(char *));
+	char **values = (char**)A_Malloc(fields_count * sizeof(char *),M_STATIC,NULL);
 	if (!values) {
 		fprintf(stderr,"memory get values %s:%d\n",__FILE__,__LINE__-2);
 		return 0x0;
@@ -2487,7 +2488,7 @@ char **get_values(char *fields_input, int fields_count)
 {
 	int i = 0, j = 0;
 
-	char **values = (char**)malloc(fields_count * sizeof(char *));
+	char **values = (char**)A_Malloc(fields_count * sizeof(char *),M_STATIC,NULL);
 	if (!values) {
 		fprintf(stderr,"memory get values %s:%d",__FILE__,__LINE__-2);
 		return 0x0;
@@ -2514,14 +2515,14 @@ char **get_values(char *fields_input, int fields_count)
 		if(strncmp(s,"[]",2) == 0){
 			values[j] = duplicate_str(get_sub_str("[","]",fields_input,0));		
 			if (!values[j]){
-				free(values);
+				A_free(values);
 				return 0x0;
 			}
 			i++;
 		}else{
 			values[j] = duplicate_str(s);
 			if (!values[j]){
-				free(values);
+				A_free(values);
 				return 0x0;
 			}
 			i++;
@@ -2530,7 +2531,7 @@ char **get_values(char *fields_input, int fields_count)
 	else
 	{
 		fprintf(stderr,"value token not found in get_values();\n");
-		free(values);
+		A_free(values);
 		return 0x0;
 	}
 
@@ -2566,10 +2567,10 @@ void free_strs(int fields_num, int count, ...)
 
 		for (j = 0; j < fields_num; j++){
 			if (str[j]){
-				free(str[j]);
+				A_free(str[j]);
 			}
 		}
-		free(str);
+		A_free(str);
 	}
 }
 
@@ -3191,7 +3192,7 @@ static struct tok_handler t_hndl;
 void clear_tok()
 {
 	t_hndl.finish = 0;
-	free(t_hndl.original_tok);
+	A_free(t_hndl.original_tok);
 	t_hndl.original_tok = 0x0;
 }
 char *tok(char *str, char *delim)
@@ -3199,7 +3200,7 @@ char *tok(char *str, char *delim)
 
 	if(t_hndl.finish){
 		if(!str){
-			free(t_hndl.original_tok);
+			A_free(t_hndl.original_tok);
 			t_hndl.original_tok = 0x0;
 			t_hndl.finish = 0;
 			return 0x0;
@@ -3208,19 +3209,19 @@ char *tok(char *str, char *delim)
 
 		size_t string_size = strlen(str);	
 		if(string_size != strlen(t_hndl.original_tok)){
-			free(t_hndl.original_tok);
+			A_free(t_hndl.original_tok);
 			t_hndl.original_tok = 0x0;
 			t_hndl.finish = 0;
 			goto tok_process;
 		}else{
 			replace('\n',*delim,t_hndl.original_tok);	
 			if(strncmp(str,t_hndl.original_tok,string_size) == 0){
-				free(t_hndl.original_tok);
+				A_free(t_hndl.original_tok);
 				t_hndl.original_tok = 0x0;
 				t_hndl.finish = 0;
 				return 0x0;
 			} else {
-				free(t_hndl.original_tok);
+				A_free(t_hndl.original_tok);
 				t_hndl.original_tok = 0x0;
 				t_hndl.finish = 0;
 				goto tok_process;
@@ -3241,10 +3242,9 @@ tok_process:
 
 	if(!t_hndl.original_tok){
 		memset(&t_hndl,0,sizeof(struct tok_handler));
-		t_hndl.original_tok = (char*)malloc(len + 1);		
-
+		t_hndl.original_tok = (char*)A_Malloc(len + 1,M_STATIC,NULL);		
 		if(!t_hndl.original_tok){
-			fprintf(stderr,"malloc failed, %s:%d.\n",__FILE__,__LINE__-2);
+			fprintf(stderr,"A_Malloc failed, %s:%d.\n",__FILE__,__LINE__-2);
 			return 0x0;
 		}
 
@@ -3255,7 +3255,7 @@ tok_process:
 	}
 
 	if(strncmp(t_hndl.delim,delim,strlen(t_hndl.delim)) != 0) {
-		free(t_hndl.original_tok);
+		A_free(t_hndl.original_tok);
 		t_hndl.original_tok = 0x0;
 		return 0x0;
 	}
@@ -3290,13 +3290,12 @@ char *duplicate_str(char *str)
 		return NULL;
 
 	size_t l = strlen(str) +1 ;
-	char *dup = (char*)malloc(l);
+	char *dup = (char*)A_Malloc(l,M_STATIC,NULL);
 	if(!dup){
-		fprintf(stderr,"malloc failed, %s:%d.\n",__FILE__,__LINE__-2);
+		fprintf(stderr,"A_Malloc failed, %s:%d.\n",__FILE__,__LINE__-2);
 		return 0x0;
 	}
 
-	memset(dup,0,l);
 	strncpy(dup,str,l-1);
 	return dup;
 }

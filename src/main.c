@@ -23,6 +23,7 @@
 #include "debug.h"
 #include "build.h"
 #include "crud.h"
+#include "allocator.h"
 
 
 char prog[] = "db";
@@ -33,6 +34,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+	if(A_init_mainzone() == -1) return -1;
 
 	__UTILITY = 1;
 	/*----------- bool values-------------------*/
@@ -1143,7 +1145,7 @@ int main(int argc, char *argv[])
 							goto option_clean_on_error;
 						}
 						/* create *p_i_nr of ht and write them to file*/
-						HashTable *ht = (HashTable*)malloc(*p_i_nr * sizeof(HashTable));
+						HashTable *ht = (HashTable*)A_Malloc(*p_i_nr * sizeof(HashTable),M_STATIC,NULL);
 						if (!ht) {
 							fprintf(stderr,"malloc failed, %s:%d.\n",__FILE__,__LINE__-2);
 							goto option_clean_on_error;

@@ -915,17 +915,17 @@ int free_schema(struct Schema *sch)
 {
 	ui16 i;
 	for(i = 0; i < sch->fields_num;i++){
-		free(sch->fields_name[i]);
+		A_free(sch->fields_name[i]);
 		if(sch->defaults[i]){
-			free(sch->defaults[i]);
+			A_free(sch->defaults[i]);
 		}
 	}
 
-	free(sch->types);
-	free(sch->is_dropped);
-	free(sch->constraints);
-	free(sch->fields_name);
-	free(sch->defaults);
+	A_free(sch->types);
+	A_free(sch->is_dropped);
+	A_free(sch->constraints);
+	A_free(sch->fields_name);
+	A_free(sch->defaults);
 	return 0;
 }
 
@@ -1260,12 +1260,12 @@ unsigned char set_field(
 
 									}else{
 										int new_count = rec->fields[index].data.file.count + 1;
-										struct Record_f *new_rec = (struct Record_f*)realloc(
+										struct Record_f *new_rec = (struct Record_f*)A_Realloc(
 												rec->fields[index].data.file.recs,
-												new_count * sizeof(struct Record_f));
+												new_count * sizeof(struct Record_f),M_STATIC,NULL);
 
 										if(!new_rec){
-											fprintf(stderr,"(%s): realloc() failed, %s:%d.\n",ERR_MSG_PAR-3);
+											fprintf(stderr,"(%s): A_Realloc() failed, %s:%d.\n",ERR_MSG_PAR-3);
 											free_strs(fields_count,1,values_in);
 											close_file(1,fd_schema);	
 											return 0;
@@ -1374,12 +1374,12 @@ unsigned char set_field(
 											}
 										}else{
 											int new_count = rec->fields[index].data.file.count + 1;
-											struct Record_f *new_rec = (struct Record_f*) realloc(
+											struct Record_f *new_rec = (struct Record_f*)A_Realloc(
 													rec->fields[index].data.file.recs,
-													new_count * sizeof(struct Record_f));
+													new_count * sizeof(struct Record_f),M_STATIC,NULL);
 
 											if(!new_rec){
-												fprintf(stderr,"(%s): realloc() failed, %s:%d.\n",ERR_MSG_PAR-3);
+												fprintf(stderr,"(%s): A_Realloc() failed, %s:%d.\n",ERR_MSG_PAR-3);
 												close_file(1,fd_schema);	
 												return 0;
 											}
@@ -1480,12 +1480,12 @@ unsigned char set_field(
 
 								}else{
 									int new_count = rec->fields[index].data.file.count + 1;
-									struct Record_f *new_rec = (struct Record_f*)realloc(
+									struct Record_f *new_rec = (struct Record_f*)A_Realloc(
 											rec->fields[index].data.file.recs,
-											new_count * sizeof(struct Record_f));
+											new_count * sizeof(struct Record_f),M_STATIC,NULL);
 
 									if(!new_rec){
-										fprintf(stderr,"(%s): realloc() failed, %s:%d.\n",ERR_MSG_PAR-3);
+										fprintf(stderr,"(%s): A_Realloc() failed, %s:%d.\n",ERR_MSG_PAR-3);
 										close_file(1,fd_schema);	
 										free_schema(hd.sch_d);
 										return 0;
@@ -1518,12 +1518,12 @@ unsigned char set_field(
 
 								}else{
 									int new_count = rec->fields[index].data.file.count + 1;
-									struct Record_f *new_rec = (struct Record_f*)realloc(
+									struct Record_f *new_rec = (struct Record_f*)A_Realloc(
 											rec->fields[index].data.file.recs,
-											new_count * sizeof(struct Record_f));
+											new_count * sizeof(struct Record_f),M_STATIC,NULL);
 
 									if(!new_rec){
-										fprintf(stderr,"(%s): realloc() failed, %s:%d.\n",ERR_MSG_PAR-3);
+										fprintf(stderr,"(%s): A_Realloc() failed, %s:%d.\n",ERR_MSG_PAR-3);
 										close_file(1,fd_schema);	
 										free_schema(hd.sch_d);
 										return 0;
@@ -2887,11 +2887,11 @@ unsigned char copy_rec(struct Record_f *src, struct Record_f *dest, struct Schem
 
 						memset(dest->fields[i].data.file.recs,0,src->fields[i].data.file.count * sizeof(struct Record_f));
 					}else{
-						struct Record_f *new_rec = (struct Record_f*)realloc(dest->fields[i].data.file.recs,
-								src->fields[i].data.file.count * sizeof(struct Record_f));
+						struct Record_f *new_rec = (struct Record_f*)A_Realloc(dest->fields[i].data.file.recs,
+								src->fields[i].data.file.count * sizeof(struct Record_f),M_STATIC,NULL);
 
 						if(!new_rec){
-							fprintf(stderr,"realloc failed, %s:%d.\n",__FILE__,__LINE__-3);
+							fprintf(stderr,"A_Realloc failed, %s:%d.\n",__FILE__,__LINE__-3);
 							free_record(dest, dest->fields_num);
 							return 0;
 						}
@@ -3114,9 +3114,13 @@ int insert_element(void *element, struct array *v, enum ValueType type)
 
 				/*not enough space, increase the size */
 				int new_size = (*v).size + 1;
-				int *elements_new = (int*)realloc((*v).elements.i,new_size * sizeof(int));
+				int *elements_new = (int*)A_Realloc(
+											(*v).elements.i,
+											new_size * sizeof(int),
+											M_STATIC,
+											NULL);
 				if (!elements_new){
-					fprintf(stderr,"(%s): realloc() failed, %s:%d.\n",ERR_MSG_PAR-2);
+					fprintf(stderr,"(%s): A_Realloc() failed, %s:%d.\n",ERR_MSG_PAR-2);
 					return -1;
 				}
 
@@ -3159,9 +3163,9 @@ int insert_element(void *element, struct array *v, enum ValueType type)
 				}
 				/*not enough space, increase the size */
 				int new_size = (*v).size + 1;
-				long *elements_new = (long*)realloc((*v).elements.l,new_size * sizeof(long));
+				long *elements_new = (long*)A_Realloc((*v).elements.l,new_size * sizeof(long),M_STATIC,NULL);
 				if (!elements_new){
-					fprintf(stderr,"(%s): realloc() failed, %s:%d.\n",ERR_MSG_PAR-2);
+					fprintf(stderr,"(%s): A_Realloc() failed, %s:%d.\n",ERR_MSG_PAR-2);
 					return -1;
 				}
 
@@ -3205,9 +3209,9 @@ int insert_element(void *element, struct array *v, enum ValueType type)
 				}
 				/*not enough space, increase the size */
 				int new_size = (*v).size + 1;
-				float *elements_new = (float*)realloc((*v).elements.f,new_size * sizeof(float));
+				float *elements_new = (float*)A_Realloc((*v).elements.f,new_size * sizeof(float),M_STATIC,NULL);
 				if (!elements_new){
-					fprintf(stderr,"(%s): realloc() failed, %s:%d.\n",ERR_MSG_PAR-2);
+					fprintf(stderr,"(%s): A_Realloc() failed, %s:%d.\n",ERR_MSG_PAR-2);
 					return -1;
 				}
 				(*v).size = new_size;
@@ -3257,9 +3261,9 @@ int insert_element(void *element, struct array *v, enum ValueType type)
 
 				/*not enough space, increase the size */
 				int new_size = (*v).size + 1;
-				char **elements_new = (char**)realloc((*v).elements.s, new_size * sizeof(char *));
+				char **elements_new = (char**)A_Realloc((*v).elements.s, new_size * sizeof(char *),M_STATIC,NULL);
 				if (!elements_new){
-					fprintf(stderr,"(%s): realloc() failed, %s:%d.\n",ERR_MSG_PAR-2);
+					fprintf(stderr,"(%s): A_Realloc() failed, %s:%d.\n",ERR_MSG_PAR-2);
 					return -1;
 				}
 
@@ -3312,11 +3316,11 @@ int insert_element(void *element, struct array *v, enum ValueType type)
 
 				/*not enough space, increase the size */
 				int new_size = (*v).size + 1;
-				unsigned char *elements_new = (unsigned char*)realloc((*v).elements.b,
-						new_size * sizeof(unsigned char));
+				unsigned char *elements_new = (unsigned char*)A_Realloc((*v).elements.b,
+						new_size * sizeof(unsigned char),M_STATIC,NULL);
 				if (!elements_new)
 				{
-					fprintf(stderr,"(%s): realloc() failed, %s:%d.\n",ERR_MSG_PAR-2);
+					fprintf(stderr,"(%s): A_Realloc() failed, %s:%d.\n",ERR_MSG_PAR-2);
 					return -1;
 				}
 
@@ -3360,10 +3364,10 @@ int insert_element(void *element, struct array *v, enum ValueType type)
 
 				/*not enough space, increase the size */
 				int new_size = (*v).size + 1;
-				double *elements_new = (double*)realloc((*v).elements.d,
-						new_size * sizeof(double));
+				double *elements_new = (double*)A_Realloc((*v).elements.d,
+						new_size * sizeof(double),M_STATIC,NULL);
 				if (!elements_new){
-					fprintf(stderr,"(%s): realloc() failed, %s:%d.\n",ERR_MSG_PAR-2);
+					fprintf(stderr,"(%s): A_Realloc() failed, %s:%d.\n",ERR_MSG_PAR-2);
 					return -1;
 				}
 
@@ -3798,10 +3802,10 @@ int parse_record_to_json(struct Record_f *rec,char **buffer)
 							if((bwritten + field_tot_length) >= buffer_lenght){
 								/* reallocate memory*/
 								size_t new_size = buffer_lenght * 2;
-								char *n_buff = (char*)realloc(*buffer,new_size * sizeof(char));
+								char *n_buff = (char*)A_Realloc(*buffer,new_size * sizeof(char),M_STATIC,NULL);
 								if(!n_buff){
 									/*log error*/
-									fprintf(stderr,"realloc() failed %s:%d.\n",F,L-3);
+									fprintf(stderr,"A_Realloc() failed %s:%d.\n",F,L-3);
 									return -1;
 								}
 								*buffer = n_buff;
@@ -3834,10 +3838,10 @@ int parse_record_to_json(struct Record_f *rec,char **buffer)
 							if((bwritten + field_tot_length) >= buffer_lenght){
 								/* reallocate memory*/
 								size_t new_size = buffer_lenght * 2;
-								char *n_buff = (char*)realloc(*buffer,new_size * sizeof(char));
+								char *n_buff = (char*)A_Realloc(*buffer,new_size * sizeof(char),M_STATIC,NULL);
 								if(!n_buff){
 									/*log error*/
-									fprintf(stderr,"realloc() failed %s:%d.\n",F,L-3);
+									fprintf(stderr,"A_Realloc() failed %s:%d.\n",F,L-3);
 									return -1;
 								}
 								*buffer = n_buff;
@@ -3872,10 +3876,10 @@ int parse_record_to_json(struct Record_f *rec,char **buffer)
 							if((bwritten + field_tot_length) >= buffer_lenght){
 								/* reallocate memory*/
 								size_t new_size = buffer_lenght * 2;
-								char *n_buff = (char*)realloc(*buffer,new_size * sizeof(char));
+								char *n_buff = (char*)A_Realloc(*buffer,new_size * sizeof(char),M_STATIC,NULL);
 								if(!n_buff){
 									/*log error*/
-									fprintf(stderr,"realloc() failed %s:%d.\n",F,L-3);
+									fprintf(stderr,"A_Realloc() failed %s:%d.\n",F,L-3);
 									return -1;
 								}
 								*buffer = n_buff;
@@ -3910,10 +3914,10 @@ int parse_record_to_json(struct Record_f *rec,char **buffer)
 							if((bwritten + field_tot_length) >= buffer_lenght){
 								/* reallocate memory*/
 								size_t new_size = buffer_lenght * 2;
-								char *n_buff = (char*)realloc(*buffer,new_size * sizeof(char));
+								char *n_buff = (char*)A_Realloc(*buffer,new_size * sizeof(char),M_STATIC,NULL);
 								if(!n_buff){
 									/*log error*/
-									fprintf(stderr,"realloc() failed %s:%d.\n",F,L-3);
+									fprintf(stderr,"A_Realloc() failed %s:%d.\n",F,L-3);
 									return -1;
 								}
 								*buffer = n_buff;
@@ -3955,10 +3959,10 @@ int parse_record_to_json(struct Record_f *rec,char **buffer)
 							if((bwritten + field_tot_length) >= buffer_lenght){
 								/* reallocate memory*/
 								size_t new_size = buffer_lenght * 2;
-								char *n_buff = (char*)realloc(*buffer,new_size * sizeof(char));
+								char *n_buff = (char*)A_Realloc(*buffer,new_size * sizeof(char),M_STATIC,NULL);
 								if(!n_buff){
 									/*log error*/
-									fprintf(stderr,"realloc() failed %s:%d.\n",F,L-3);
+									fprintf(stderr,"A_Realloc() failed %s:%d.\n",F,L-3);
 									return -1;
 								}
 								*buffer = n_buff;
@@ -3994,10 +3998,10 @@ int parse_record_to_json(struct Record_f *rec,char **buffer)
 							if((bwritten + field_tot_length) >= buffer_lenght){
 								/* reallocate memory*/
 								size_t new_size = buffer_lenght * 2;
-								char *n_buff = (char*)realloc(*buffer,new_size * sizeof(char));
+								char *n_buff = (char*)A_Realloc(*buffer,new_size * sizeof(char),M_STATIC,NULL);
 								if(!n_buff){
 									/*log error*/
-									fprintf(stderr,"realloc() failed %s:%d.\n",F,L-3);
+									fprintf(stderr,"A_Realloc() failed %s:%d.\n",F,L-3);
 									return -1;
 								}
 								*buffer = n_buff;
@@ -4032,10 +4036,10 @@ int parse_record_to_json(struct Record_f *rec,char **buffer)
 							if((bwritten + field_tot_length) >= buffer_lenght){
 								/* reallocate memory*/
 								size_t new_size = buffer_lenght * 2;
-								char *n_buff = (char*)realloc(*buffer,new_size * sizeof(char));
+								char *n_buff = (char*)A_Realloc(*buffer,new_size * sizeof(char),M_STATIC,NULL);
 								if(!n_buff){
 									/*log error*/
-									fprintf(stderr,"realloc() failed %s:%d.\n",F,L-3);
+									fprintf(stderr,"A_Realloc() failed %s:%d.\n",F,L-3);
 									return -1;
 								}
 								*buffer = n_buff;

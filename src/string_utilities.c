@@ -5,6 +5,7 @@
 #include <ctype.h>
 
 #include "string_utilities.h"
+#include "allocator.h"
 
 /*static functions to manage String struct*/
 
@@ -40,9 +41,9 @@ int init(struct String *str,char *val)
 	for(i = 0; *p != '\0'; i++,p++);
 
 	if(i > STR_BASE){
-		str->str = (char*)malloc(i+1);
+		str->str = (char*)A_Malloc(i+1,M_STATIC,NULL);
 		if(!str->str){
-			fprintf(stderr,"malloc failed.%s:%d.\n",__FILE__,__LINE__-2);
+			fprintf(stderr,"A_Malloc failed.%s:%d.\n",__FILE__,__LINE__-2);
 			return -1;
 		}
 		str->str[i] = '\0';
@@ -80,9 +81,9 @@ static int append(struct String *str, char *str_to_appen)
 		str->size += nl;
 		return 0;
 	} else if((str->size + nl) >= STR_BASE){
-		str->str = (char *) malloc(str->size + nl + 1);
+		str->str = (char *) A_Malloc(str->size + nl + 1,M_STATIC,NULL);
 		if(!str->str){
-			fprintf(stderr,"malloc failed.%s:%d.\n",__FILE__,__LINE__-2);
+			fprintf(stderr,"A_Malloc failed.%s:%d.\n",__FILE__,__LINE__-2);
 			return -1;
 		}
 		str->str[str->size+nl] = '\0';

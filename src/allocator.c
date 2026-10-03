@@ -9,6 +9,8 @@
 #	define ALIGN  4
 #endif
 
+static void **zone_used = NULL;
+
 #define M_ZONE_ID 0x0F453210
 int mb_used = 8;
 
@@ -20,6 +22,13 @@ int A_init_mainzone(void)
 	struct Memblock_s *block;
 	int32_t size = MEM_SIZE(mb_used);
 	
+	/*Marker will be used to mark a block in used*/
+	int *marker =  malloc(sizeof(int));
+	if( !marker) return -1;
+
+	memset(marker,0,sizeof *marker);
+	zone_used = (void*)marker;	
+
 	mainzone = (struct Memzone_t*)malloc(size);
 	if(!mainzone) return -1;
 	memset(mainzone,0,size);
@@ -100,9 +109,9 @@ void *A_Malloc(int size, int tag, void *user)
 	
 	if(user){
 		base->user = user;
-		*(void**)user = (void*)(base + sizeof *base);
+		*(void**)user = (void*)((uint8_t*)base + sizeof *base);
 	}else{
-		base->user = (void*)2;
+		base->user = zone_used;
 	}
 
 	base->tag = tag;
@@ -115,16 +124,16 @@ void *A_Malloc(int size, int tag, void *user)
 void A_free(void *m)
 {
 
+	if(!m) return;
 	struct Memblock_s *block;
 	struct Memblock_s *other;
 
 	block = (struct Memblock_s *)((uint8_t 	*)m - sizeof *block);
-	if(block->id != M_ZONE_ID) return ;
-	
-	/*clear memory*/
-	memset(m,0,block->size - sizeof *block);
+	if(block->id != M_ZONE_ID) exit(0);
 
-	if(block->user > (void**)0x100) *block->user = 0;
+	
+
+	if(block->user != zone_used) *block->user = NULL;
 	
 	block->user = NULL;
 	block->tag = 0;
@@ -152,6 +161,13 @@ void A_free(void *m)
 		if(other == mainzone->rover)
 			mainzone->rover = block;
 	}
+
+	/*
+		clear memory
+		it is important to clear memory after the merging so we clean
+		all absorbed stale headers block
+	*/
+	memset((uint8_t*)block + sizeof *block,0,block->size - sizeof *block);
 }
 void *A_Realloc(void *ptr,int size, int tag, void *user)
 {
@@ -159,7 +175,7 @@ void *A_Realloc(void *ptr,int size, int tag, void *user)
 	struct Memblock_s *block = (struct Memblock_s *)((uint8_t*)ptr - sizeof *block);
 	if((block->size - (int)sizeof *block) >= size) return NULL;
 	
-	void *m = (uint8_t*)A_Malloc(size,tag,user) + sizeof *block;	
+	void *m = A_Malloc(size,tag,user);
 	if(!m) return NULL;
 
 	memcpy(m,ptr,block->size - sizeof *block);
@@ -175,7 +191,7 @@ void A_change_tag(void *ptr,int tag)
 
 	if(block->id != M_ZONE_ID) return;
 
-	if(tag >= M_PURGELEVEL && block->user < (void**) 0x100) return;
+	if(tag >= M_PURGELEVEL && block->user == zone_used) return;
 
 	block->tag = tag;
 }
@@ -196,4 +212,9 @@ void A_clear_zone(struct Memzone_t *zone)
 
 	block->user = NULL;
 	block->size = zone->size - sizeof *zone;
+}
+
+void A_close_mainzone(void) /*only for development*/
+{
+	free(mainzone);
 }
