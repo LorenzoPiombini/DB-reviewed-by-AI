@@ -614,20 +614,20 @@ int write_header(file_t fd, struct Header_d *hd)
 	case VS:
 		if(write_hd_VS1(&buf,&bwritten,&hd->sch_d) == -1){
 			buf -= sizeof(unsigned long);
-			A_free(buf);
+			free(buf);
 			return 0;
 		}
 		break;
 	default:
 		buf -= sizeof(unsigned long);
-		A_free(buf);
+		free(buf);
 		return 0;
 	}
 	
 	if(os_write(fd,buf,bwritten) == -1){
 		fprintf(stderr,"cannot write header, %s:%d.\n",__FILE__,__LINE__ - 1);
 		buf -= sizeof(unsigned long);
-		A_free(buf);
+		free(buf);
 		return 0;
 	}
 
@@ -655,11 +655,24 @@ static int read_hd_V1(ui8 **buf, long *bread, struct Schema **sch)
 	(*sch)->constraints = 	(ui8*)	 A_Malloc((*sch)->fields_num,M_STATIC,NULL);
 	(*sch)->defaults = 		(void**) A_Malloc((*sch)->fields_num*sizeof(void*),M_STATIC,NULL);
 
-    if(!(*sch)->fields_name || !(*sch)->types || !(*sch)->is_dropped ||
-       !(*sch)->constraints || !(*sch)->defaults){
-        free_schema(*sch);
-        return -1;
-    }
+	if(!(*sch)->fields_name
+			|| !(*sch)->types 
+			|| !(*sch)->is_dropped
+			|| !(*sch)->constraints
+			|| !(*sch)->defaults){
+		fprintf(stderr,"A_Malloc failed %s:%d.\n",__FILE__,__LINE__-4);
+		if((*sch)->fields_name) 
+			A_free((*sch)->fields_name);
+		if((*sch)->types)
+			A_free((*sch)->types);
+		if((*sch)->is_dropped)
+			A_free((*sch)->is_dropped);
+		if((*sch)->constraints)
+			A_free((*sch)->constraints);
+		if((*sch)->defaults)
+			A_free((*sch)->defaults);
+		return -1;
+	} 
 
 	ui16 i;
 	for (i = 0; i < (*sch)->fields_num; i++) {
@@ -866,7 +879,7 @@ int read_header(file_t fd, struct Header_d *hd)
 	hd->id_n = swap32(id); /*changing the bytes to host endianess*/
 	if (hd->id_n != HEADER_ID_SYS) {
 		printf("this is not a db file.\n");
-		A_free(buf);
+		free(buf);
 		return 0;
 	}
 
@@ -1530,8 +1543,8 @@ static int schema_check_type(int count,int mode,struct Schema *sch,
 						char cpy[s];
 						memset(cpy,0,s);
 						strncpy(cpy,(*values)[i],vs);
-						strncat(cpy,decimal,ds);
-						A_free((*values)[i]);
+						strncpy(&cpy[vs],decimal,ds);
+						free((*values)[i]);
 						(*values)[i] = duplicate_str(cpy);
 						if(!(*values)[i]){
 							fprintf(stderr,"duplicate_str() failed, %s:%d.\n",F,L-2);
@@ -1689,8 +1702,8 @@ static int schema_check_type(int count,int mode,struct Schema *sch,
 							char cpy[s];
 							memset(cpy,0,s);
 							strncpy(cpy,(*values)[j],vs);
-							strncat(cpy,decimal,ds);
-							A_free((*values)[j]);
+							strncpy(&cpy[vs],decimal,ds);
+							free((*values)[j]);
 							(*values)[j] = duplicate_str(cpy);
 							if(!(*values)[j]){
 								fprintf(stderr,"duplicate_str() failed, %s:%d.\n",F,L-2);
@@ -1886,8 +1899,8 @@ static int check_double_compatibility(struct Schema *sch, char ***values)
 			char cpy[s];
 			memset(cpy,0,s);
 			strncpy(cpy,(*values)[i],vs);
-			strncat(cpy,decimal,ds);
-			A_free((*values)[i]);
+			strncpy(&cpy[vs],decimal,ds);
+			free((*values)[i]);
 			(*values)[i] = duplicate_str(cpy);
 			if(!(*values)[i]){
 				fprintf(stderr,"duplicate_str() failed, %s:%d.\n",F,L-2);
@@ -2676,14 +2689,14 @@ unsigned char compare_old_rec_update_rec(struct Record_f **rec_old,
 						size_t size_new = strlen(rec->fields[j].data.s);
 						if(size_new == size_old){
 							if (strcmp(rec_old[0]->fields[j].data.s, rec->fields[j].data.s) != 0) {
-								A_free(rec_old[0]->fields[j].data.s);
+								free(rec_old[0]->fields[j].data.s);
 								rec_old[0]->fields[j].data.s = duplicate_str(rec->fields[j].data.s);
 								if (!rec_old[0]->fields[j].data.s){
 									fprintf(stderr, "duplicate_str failed, %s:%d.\n", F, L - 2);
 									return 0;
 								}
 								/*free the memory in the new record*/
-								A_free(rec->fields[j].data.s);
+								free(rec->fields[j].data.s);
 								rec->fields[j].data.s = NULL;
 								changed = 1;
 								break;
@@ -2693,7 +2706,7 @@ unsigned char compare_old_rec_update_rec(struct Record_f **rec_old,
 							break;
 
 						}else{
-							A_free(rec_old[0]->fields[j].data.s);
+							free(rec_old[0]->fields[j].data.s);
 							rec_old[0]->fields[j].data.s = NULL;
 							rec_old[0]->fields[j].data.s = duplicate_str(rec->fields[j].data.s);
 							if(!rec_old[0]->fields[j].data.s){
@@ -2702,7 +2715,7 @@ unsigned char compare_old_rec_update_rec(struct Record_f **rec_old,
 							}
 
 							/*free the memory in the new record*/
-							A_free(rec->fields[j].data.s);
+							free(rec->fields[j].data.s);
 							rec->fields[j].data.s = NULL;
 
 							changed = 1;
@@ -2932,7 +2945,7 @@ unsigned char compare_old_rec_update_rec(struct Record_f **rec_old,
 							if (strcmp(rec_old[0]->fields[j].data.v.elements.s[a], rec->fields[j].data.v.elements.s[a]) != 0){
 								/*free memory before allocating other memory*/
 								if (rec_old[0]->fields[j].data.v.elements.s[a] != NULL)	{
-									A_free(rec_old[0]->fields[j].data.v.elements.s[a]);
+									free(rec_old[0]->fields[j].data.v.elements.s[a]);
 									rec_old[0]->fields[j].data.v.elements.s[a] = NULL;
 								}
 
@@ -3160,7 +3173,7 @@ unsigned char compare_old_rec_update_rec(struct Record_f **rec_old,
 						/*free memory before allocating other memory*/
 						if (rec_old[0]->fields[i].data.s != NULL) {
 							char *p =rec_old[0]->fields[i].data.s; 
-							A_free(p);
+							free(p);
 							rec_old[0]->fields[i].data.s = NULL;
 						}
 						size_t l = strlen(rec->fields[i].data.s);
@@ -3393,7 +3406,7 @@ unsigned char compare_old_rec_update_rec(struct Record_f **rec_old,
 							if (strcmp(rec_old[0]->fields[i].data.v.elements.s[a], rec->fields[i].data.v.elements.s[a]) != 0){
 								/* free memory before allocating other memory */
 								if (rec_old[0]->fields[i].data.v.elements.s[a] != NULL){
-									A_free(rec_old[0]->fields[i].data.v.elements.s[a]);
+									free(rec_old[0]->fields[i].data.v.elements.s[a]);
 									rec_old[0]->fields[i].data.v.elements.s[a] = NULL;
 								}
 
@@ -3545,7 +3558,7 @@ void find_fields_to_update(
 					break;
 				case TYPE_STRING:
 					if (rec_old[j]->fields[index].data.s != NULL) {
-						A_free(rec_old[j]->fields[index].data.s);
+						free(rec_old[j]->fields[index].data.s);
 						rec_old[j]->fields[index].data.s = NULL;
 					}
 
@@ -3846,7 +3859,7 @@ void find_fields_to_update(
 						}
 						int a;
 						for (a = 0; a < rec->fields[index].data.v.size; a++){
-							A_free(rec_old[j]->fields[index].data.v.elements.s[a]);
+							free(rec_old[j]->fields[index].data.v.elements.s[a]);
 
 							rec_old[j]->fields[index].data.v.elements.s[a] =
 								duplicate_str(rec->fields[index].data.v.elements.s[a]);
@@ -3921,11 +3934,11 @@ void find_fields_to_update(
 						if(option == AAR){
 							n_size = rec_old[j]->fields[index].data.file.count + rec->fields[index].data.file.count;
 
-							struct Record_f *n_recs = (struct Record_f*)A_realloc(
+							struct Record_f *n_recs = (struct Record_f*)realloc(
 									rec_old[j]->fields[index].data.file.recs,
 									n_size * sizeof(struct Record_f));
 							if(!n_recs){
-								fprintf(stderr,"A_realloc() failed, %s:%d.\n",__FILE__,__LINE__ - 4);
+								fprintf(stderr,"realloc() failed, %s:%d.\n",__FILE__,__LINE__ - 4);
 								free_schema(hd.sch_d);
 								positions[0] = '0';
 								return;
@@ -3959,12 +3972,12 @@ void find_fields_to_update(
 							/*free_type_file(rec_old[j],1);*/
 
 							if(rec_old[j]->fields[index].data.file.count != rec->fields[index].data.file.count){
-								struct Record_f *n_recs = (struct Record_f*)A_realloc(
+								struct Record_f *n_recs = (struct Record_f*)realloc(
 										rec_old[j]->fields[index].data.file.recs,
 										rec->fields[index].data.file.count * sizeof(struct Record_f));
 
 								if(!n_recs){
-									fprintf(stderr,"A_realloc() failed, %s:%d.\n",__FILE__,__LINE__ - 4);
+									fprintf(stderr,"realloc() failed, %s:%d.\n",__FILE__,__LINE__ - 4);
 									close_file(1,fd_sch);
 									positions[0] = '0';
 									free_schema(hd.sch_d);
@@ -4013,7 +4026,7 @@ void find_fields_to_update(
 												if(sz != (int)strlen(or->fields[x].data.s) 
 														|| strncmp(nr->fields[x].data.s,or->fields[x].data.s,sz) != 0){
 
-													A_free(or->fields[x].data.s);
+													free(or->fields[x].data.s);
 													or->fields[x].data.s = (char *)A_Malloc(sz+1,M_STATIC,NULL);
 													if(!or->fields[x].data.s){
 														fprintf(stderr,"A_Malloc() failed, %s:%d.\n",__FILE__,__LINE__ - 2);
@@ -4174,7 +4187,7 @@ void find_fields_to_update(
 													}
 													int a;
 													for (a = 0; a < nr->fields[x].data.v.size; a++){
-														A_free(or->fields[x].data.v.elements.s[a]);
+														free(or->fields[x].data.v.elements.s[a]);
 
 														or->fields[x].data.v.elements.s[a] =
 															duplicate_str(nr->fields[x].data.v.elements.s[a]);
