@@ -1544,7 +1544,7 @@ static int schema_check_type(int count,int mode,struct Schema *sch,
 						memset(cpy,0,s);
 						strncpy(cpy,(*values)[i],vs);
 						strncpy(&cpy[vs],decimal,ds);
-						free((*values)[i]);
+						A_free((*values)[i]);
 						(*values)[i] = duplicate_str(cpy);
 						if(!(*values)[i]){
 							fprintf(stderr,"duplicate_str() failed, %s:%d.\n",F,L-2);
@@ -1703,7 +1703,7 @@ static int schema_check_type(int count,int mode,struct Schema *sch,
 							memset(cpy,0,s);
 							strncpy(cpy,(*values)[j],vs);
 							strncpy(&cpy[vs],decimal,ds);
-							free((*values)[j]);
+							A_free((*values)[j]);
 							(*values)[j] = duplicate_str(cpy);
 							if(!(*values)[j]){
 								fprintf(stderr,"duplicate_str() failed, %s:%d.\n",F,L-2);
@@ -1900,7 +1900,7 @@ static int check_double_compatibility(struct Schema *sch, char ***values)
 			memset(cpy,0,s);
 			strncpy(cpy,(*values)[i],vs);
 			strncpy(&cpy[vs],decimal,ds);
-			free((*values)[i]);
+			A_free((*values)[i]);
 			(*values)[i] = duplicate_str(cpy);
 			if(!(*values)[i]){
 				fprintf(stderr,"duplicate_str() failed, %s:%d.\n",F,L-2);
