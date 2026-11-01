@@ -32,6 +32,7 @@ void print_usage(char *argv[])
         printf("\t -j - display the journal of operations.\n");
         printf("\t -N - display the nr of record in the file.\n");
         printf("\t -d - drop one or more fields in the file.\n");
+        printf("\t -J - browse the file record by record.\n");
 }
 
 void print_types(void)
@@ -67,7 +68,8 @@ int check_input_and_values(struct String schema_def, struct String file_path, st
 							unsigned char nr_of_record_display,
 							unsigned char del_field,
 							unsigned char modify_schema,
-							unsigned char swap_index)
+							unsigned char swap_index,
+							unsigned char browse)
 {
 	if((del_field && file_path.is_empty(&file_path)) 
 			|| (del_field && ( del 					
@@ -82,7 +84,8 @@ int check_input_and_values(struct String schema_def, struct String file_path, st
 						|| modify_schema
 						|| import_from_data
 						|| nr_of_record_display
-						|| swap_index))){
+						|| swap_index
+						|| browse))){
 		printf("option -d must be used with -f.\n\n");
 		printf("isam.db -f [file_name] -d [fields:that:you:want:to:drop].\n\n");
 		print_usage(argv);
@@ -111,7 +114,8 @@ int check_input_and_values(struct String schema_def, struct String file_path, st
 				|| index_add 
 				|| import_from_data
 				|| nr_of_record_display
-				|| swap_index))){
+				|| swap_index
+				|| browse))){
 		printf("option -M must be used with -f.\n\n");
 		printf("isam.db -Mf [file_name] -R [fields:that:you:want:to:change:the:name].\n\n");
 		print_usage(argv);
@@ -131,7 +135,8 @@ int check_input_and_values(struct String schema_def, struct String file_path, st
 			|| modify_schema
 			|| import_from_data
 			|| nr_of_record_display
-			|| swap_index)){
+			|| swap_index
+			|| browse)){
                 printf("option -j must be used by itself.\n");
                 return 0;
         }
@@ -149,7 +154,8 @@ int check_input_and_values(struct String schema_def, struct String file_path, st
 				|| modify_schema
 				|| import_from_data
 				|| nr_of_record_display
-				|| swap_index)){
+				|| swap_index
+				|| browse)){
 		printf("option -c must be used by itself.\n");
 		printf(" -c <txt-with-files-definitions>.\n");
 		return 0;
@@ -166,7 +172,8 @@ int check_input_and_values(struct String schema_def, struct String file_path, st
 				|| !data_to_add.is_empty(&data_to_add) 
 				|| build
 				|| nr_of_record_display
-				|| swap_index)){
+				|| swap_index
+				|| browse)){
 		printf("option -l must be used with -f only.\n");
 		printf("[example]: isam_db -lf a_file.\n");
 		return 0;
@@ -182,7 +189,8 @@ int check_input_and_values(struct String schema_def, struct String file_path, st
 				|| !data_to_add.is_empty(&data_to_add) 
 				|| build
 				|| nr_of_record_display
-				|| swap_index)){
+				|| swap_index
+				|| browse)){
 		print_usage(argv);
 		fprintf(stderr, "\nyou can use option -A only with options -f -i and -x\n");
 		return 0;
@@ -194,7 +202,7 @@ int check_input_and_values(struct String schema_def, struct String file_path, st
 	}
 
 	if (build && !file_path.is_empty(&file_path)    &&
-			(del || update || del_file || list_def || new_file || !key.is_empty(&key) || !data_to_add.is_empty(&data_to_add)  ))
+			(del || update || del_file || list_def || new_file || browse || !key.is_empty(&key) || !data_to_add.is_empty(&data_to_add)  ))
 	{
 		printf("you must use options -b only with option -f:\n\t-f <filename> -b <filename[txt,csv,tab delimited]> \n");
 		print_usage(argv);
@@ -213,7 +221,8 @@ int check_input_and_values(struct String schema_def, struct String file_path, st
 				|| index_add 
 				|| create
 				|| nr_of_record_display
-				|| swap_index)){
+				|| swap_index
+				|| browse)){
 		printf("option -B must be used by itself.\n");
 		printf(" -B <txt with files data to import>.\n");
 		fprintf(stderr,"!! the file system MUST exist already !!\n");
@@ -260,7 +269,8 @@ int check_input_and_values(struct String schema_def, struct String file_path, st
 			 || index_add 
 			 || import_from_data
 			 || nr_of_record_display
-			 || swap_index)){
+			 || swap_index
+			 || browse)){
 
 		printf("you cannot use option -e with other options! Only -ef <fileName>.\n");
 		print_usage(argv);

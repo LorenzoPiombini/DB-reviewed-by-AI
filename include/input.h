@@ -30,7 +30,8 @@ int check_input_and_values( struct String schema_def,
 							unsigned char nr_of_record_display,
 							unsigned char del_field,
 							unsigned char modify_schema,
-							unsigned char swap_index);
+							unsigned char swap_index,
+							unsigned char browse);
 
 void print_types(void);
 int convert_options(char *options);

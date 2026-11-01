@@ -56,6 +56,7 @@ int main(int argc, char *argv[])
 	unsigned char nr_of_record_display = 0;
 	unsigned char modify_schema = 0;
 	unsigned char swap_index = 0;
+	unsigned char browse = 0;
 	/*------------------------------------------*/
 
 	/* parameters populated with the flag from getopt()*/
@@ -79,9 +80,14 @@ int main(int argc, char *argv[])
 	int index_nr = 0;
 	int only_dat = 0;
 
-	while ((c = getopt(argc, argv, "jnItAf:F:a:k:d:D:R:uleB:b:s:x:c:C:i:o:X:NMS")) != -1)
+	while ((c = getopt(argc, argv, "jnItAf:F:a:k:d:D:R:uleB:b:s:x:c:C:i:o:X:NMSJ")) != -1)
 	{
 		switch (c){
+		case 'J':
+		{
+			browse = 1;
+			break;
+		}
 		case 'S':
 		{
 			swap_index = 1;
@@ -266,7 +272,8 @@ int main(int argc, char *argv[])
 				nr_of_record_display,
 				del_field,
 				modify_schema,
-				swap_index)) {
+				swap_index,
+				browse)) {
 		return -1;
 	}
 
@@ -835,7 +842,7 @@ int main(int argc, char *argv[])
 
 		/* ====================================================	*/
 		/* we open the file here and we acquire the lock, if we */
-		/* if we cannot aquire the lock the program will exit	*/
+		/* cannot aquire the lock the program will exit.		*/
 		/* ====================================================	*/
 		
 		file_t fds[3];
@@ -896,6 +903,53 @@ int main(int argc, char *argv[])
 		}
 
 		/*FROM HERE THE LOCK IS ALWAYS ACQUIRED */
+		if(browse){
+			char keyboard = 0;
+			HashTable ht = {0};
+			struct Ram_file r = {0};
+			struct Record_f rec = {0};
+			/*empty record to display records*/
+			if(create_record(cpy_fp,*hd.sch_d, &rec) == -1) goto browse_error;
+
+			HashTable *p_ht = &ht;
+			if (!read_index_nr(index_nr, fds[0], &p_ht)) goto browse_error;
+			if(get_all_record(fds[1],&r) == -1) goto browse_error;
+
+			int i = 0;
+			for(;i < ht.size; i++){
+				if(ht.data_map[i] == NULL) continue;
+	
+				Node *current = ht.data_map[i];
+				while (current != NULL) {
+					r.offset = current->value;
+
+					if(read_ram_file(cpy_fp,&r,&rec,*hd.sch_d) == -1) goto browse_error;
+
+					print_record(rec.count, rec);
+					free_record(&rec, rec.fields_num);
+					memset(&rec,0,sizeof(struct Record_f));
+					keyboard = (char)getc(stdin);
+					if(keyboard == 'q') break; 
+					current = current->next;
+				}
+			}
+			close_ram_file(&r);
+			release_lock(fds,-1);
+			free_schema(hd.sch_d);
+			destroy_hasht(&ht);
+			close_file(3, fds[0], fds[1],fds[2]);
+			return 0;
+
+browse_error:
+			fprintf(stderr,"browsing file '%s' failed\n",cpy_fp);
+			if(r.mem) close_ram_file(&r);
+			release_lock(fds,-1);
+			free_schema(hd.sch_d);
+			close_file(3, fds[0], fds[1],fds[2]);
+			destroy_hasht(&ht);
+			return STATUS_ERROR;
+		}
+
 		if(swap_index){
 			HashTable *ht = NULL;
 			int index = 0;
@@ -1505,11 +1559,11 @@ int main(int argc, char *argv[])
 #endif
 				{
 					if(keys_data.keys[i].size == 16)
-						fprintf(stderr,"%d. %u   ", ++j, keys_data.keys[i].k.n16);
+						fprintf(stdout,"%d. %u   ", ++j, keys_data.keys[i].k.n16);
 					else
-						fprintf(stderr,"%d. %u   ", ++j, keys_data.keys[i].k.n);
+						fprintf(stdout,"%d. %u   ", ++j, keys_data.keys[i].k.n);
 					print_pack_str(keys_data.keys[i].paked_k);
-					fprintf(stderr,"\n");
+					fprintf(stdout,"\n");
 					break;
 				}
 				default:
@@ -1517,7 +1571,7 @@ int main(int argc, char *argv[])
 				}
 
 				if (i > 0 && (i % 20 == 0)){
-					fprintf(stderr,"press return key. . .\nenter q to quit . . .\n");
+					fprintf(stdout,"press return key. . .\nenter q to quit . . .\n");
 					keyboard = (char)getc(stdin);
 				}
 

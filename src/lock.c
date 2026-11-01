@@ -22,7 +22,9 @@
 #include "string_utilities.h"
 
 static int lock(file_t fd, int flag);
+
 int release_lock(file_t *fds,int mode){
+	if(mode == NO_LOCK) return 0;
 	int r = 0, slept = 0, second_to_sleep = 0;
 	if(IS_LOCK_FROM_LUA(mode))
 		second_to_sleep = 1;
@@ -106,6 +108,7 @@ int release_lock(file_t *fds,int mode){
 
 
 int acquire_lock(file_t *fds, int mode){
+	if(mode == NO_LOCK) return 0;
 	int r = 0, slept = 0, second_to_sleep = 0;
 	if(IS_LOCK_FROM_LUA(mode))
 		second_to_sleep = 1;

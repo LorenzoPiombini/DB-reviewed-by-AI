@@ -6,6 +6,7 @@
 #define GET_TYPE_LOCK(n) ((n) & 0x000000ff)
 #define IS_LOCK_FROM_LUA(n) (((n) & 0x00000100) != 0)
 enum lock_type{
+	NO_LOCK = 0,
 	STD_LOCK = 1,
 	LOCK_DATA_FILE = 2,
 	LOCK_SCHEMA_FILE = 3,

@@ -74,7 +74,6 @@ int create_file(char *fileName, file_t *fd)
 #if defined(__linux__) || defined(__APPLE__)
 	*fd = open(fileName, O_RDONLY);
 	if (*fd != STATUS_ERROR) {
-		printf("File already exist.\n");
 		close(*fd);
 		*fd = EEXIST;
 		return -1;
@@ -91,7 +90,6 @@ int create_file(char *fileName, file_t *fd)
 #elif defined(_WIN32)
 	DWORD err = GetFileAttributesA(fileName);
 	if(err !=  INVALID_FILE_ATTRIBUTES){
-		fprintf(stderr,"file already exist\n");
 		return -1;
 	}
 
